@@ -26,6 +26,19 @@
             50% { top: 100%; }
             100% { top: 0; }
         }
+
+        /* Simulador Mòbil */
+        .mobile-simulator {
+            width: 320px;
+            height: 568px;
+            border-radius: 2.5rem;
+            border: 12px solid #0f172a;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            background: #f8fafc;
+            overflow-y: auto;
+            position: relative;
+        }
+        .mobile-simulator::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body>
@@ -50,37 +63,31 @@
     </div>
 
     <script>
-        // Transparent 1x1 pixel base64 for default placeholder
         const defaultB64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
         const state = {
             view: 'home', 
+            previewStepIndex: 0,
             tours: [
                 {
                     id: 'demo-1',
                     title: 'Aventura Completa: Explorant l\'Entorn',
-                    description: 'Ruta d\'exemple que conté totes les funcionalitats: àudio, geolocalització al mapa i Realitat Augmentada amb detecció real d\'imatges.',
+                    description: 'Ruta d\'exemple que conté totes les funcionalitats.',
+                    trackingUrl: '',
                     steps: [
                         { type: 'stage', title: 'Benvinguda Multimèdia' },
-                        { type: 'info', content: 'Escolteu aquesta breu introducció d\'àudio abans de començar a caminar.', mediaType: 'audio', mediaUrl: 'https://actions.google.com/sounds/v1/nature/bird_song.ogg' },
-                        { type: 'stage', title: 'Exploració Física i AR' },
-                        { type: 'find_spot', locationHint: 'Aneu fins a la zona marcada al mapa per poder avançar.', targetLat: 41.3851, targetLng: 2.1734 },
-                        { type: 'quiz', question: 'Ara que hi heu arribat, què destaqueu de l\'entorn?', options: ['Arquitectura', 'Natura', 'Silenci', 'Urbanisme'], correct: 0 },
-                        { type: 'question', question: 'Quin és el color de l\'aigua del mar?', validAnswers: ['blau', 'blava', 'turquesa'] },
-                        { 
-                            type: 'ar_exp', 
-                            instruction: 'Enfoqueu amb la càmera la imatge indicada per descobrir el model 3D.', 
-                            triggerImageB64: defaultB64,
-                            triggerTemplateB64: defaultB64,
-                            arType: '3d',
-                            arContent: 'https://modelviewer.dev/shared-assets/models/Astronaut.glb'
-                        },
-                        { type: 'mission', instruction: 'Feu una reflexió ràpida: Quin ús responsable faríeu d\'aquest espai? Escriviu-ho breument.' }
+                        { type: 'info', content: 'Escolteu aquesta breu introducció abans de començar.', mediaType: 'audio', mediaUrl: 'https://actions.google.com/sounds/v1/nature/bird_song.ogg' },
+                        { type: 'sort', instruction: 'Ordeneu els següents elements del més antic al més modern:', correctOrder: ['Primer element', 'Segon element', 'Tercer element'] },
+                        { type: 'find_spot', locationHint: 'Aneu fins a la zona marcada al mapa per avançar.', targetLat: 41.3851, targetLng: 2.1734 },
+                        { type: 'quiz', question: 'Què destaqueu de l\'entorn?', options: ['Arquitectura', 'Natura', 'Silenci', 'Urbanisme'], correct: 0 },
+                        { type: 'question', question: 'Quin és el color del cel?', validAnswers: ['blau', 'celeste'] },
+                        { type: 'ar_exp', instruction: 'Enfoqueu amb la càmera per descobrir el model 3D.', triggerImageB64: defaultB64, triggerTemplateB64: defaultB64, arType: '3d', arContent: 'https://modelviewer.dev/shared-assets/models/Astronaut.glb' },
+                        { type: 'mission', instruction: 'Quin ús responsable faríeu d\'aquest espai? Escriviu-ho.' }
                     ]
                 }
             ],
-            draftTour: { id: null, title: '', description: '', steps: [] },
-            playState: { tourId: null, currentStep: 0, score: 0, maxScore: 0, attempts: {}, feedbackMsg: null, feedbackType: null, geoVerified: false },
+            draftTour: { id: null, title: '', description: '', steps: [], trackingUrl: '' },
+            playState: { tourId: null, currentStep: 0, score: 0, maxScore: 0, attempts: {}, feedbackMsg: null, feedbackType: null, geoVerified: false, stepStartTime: null, interactionLogs: [], currentSortOrder: null },
             modalState: { isOpen: false, type: null, editIndex: null, tempQuizOptions: [], tempQuizCorrect: 0 },
             dialogState: { isOpen: false, message: '', type: 'alert', onConfirm: null }
         };
@@ -99,18 +106,22 @@
             const appContainer = document.getElementById('app');
             appContainer.innerHTML = `
                 <header class="bg-emerald-600 text-white shadow-md sticky top-0 z-10">
-                    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+                    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
                         <div class="flex items-center gap-2 cursor-pointer" onclick="navigateTo('home')">
                             <i class="ph-fill ph-map-trifold text-3xl"></i>
                             <h1 class="text-xl font-bold tracking-wide">RutaViva</h1>
                         </div>
-                        <button onclick="navigateTo('home')" class="p-2 hover:bg-emerald-700 rounded-full transition"><i class="ph ph-house text-2xl"></i></button>
+                        <nav>
+                            <button onclick="navigateTo('home')" class="p-2 hover:bg-emerald-700 rounded-full transition" title="Inici">
+                                <i class="ph ph-house text-2xl"></i>
+                            </button>
+                        </nav>
                     </div>
                 </header>
             `;
 
             const mainContent = document.createElement('main');
-            mainContent.className = 'flex-grow max-w-4xl w-full mx-auto p-4 flex flex-col fade-in relative z-0';
+            mainContent.className = 'flex-grow max-w-6xl w-full mx-auto p-4 flex flex-col fade-in relative z-0';
             
             switch(state.view) {
                 case 'home': mainContent.innerHTML = renderHome(); break;
@@ -118,7 +129,9 @@
                 case 'list': mainContent.innerHTML = renderList(); break;
                 case 'play': mainContent.innerHTML = renderPlay(); break;
                 case 'summary': mainContent.innerHTML = renderSummary(); break;
+                default: mainContent.innerHTML = renderHome();
             }
+            
             appContainer.appendChild(mainContent);
 
             if (state.view === 'play') {
@@ -188,7 +201,7 @@
         }
 
         function renderList() {
-            let html = `<div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold text-slate-800">Rutes Disponibles</h2><button onclick="navigateTo('home')" class="p-2 bg-slate-200 rounded-full"><i class="ph ph-arrow-left"></i></button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+            let html = `<div class="mb-6 flex items-center justify-between max-w-4xl mx-auto"><h2 class="text-2xl font-bold text-slate-800">Rutes Disponibles</h2><button onclick="navigateTo('home')" class="p-2 bg-slate-200 rounded-full"><i class="ph ph-arrow-left"></i></button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">`;
             if (state.tours.length === 0) {
                 html += `<div class="col-span-2 text-center py-12 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500">No hi ha cap ruta guardada actualment.</div>`;
             } else {
@@ -200,7 +213,6 @@
                             <div class="flex gap-2 mt-4">
                                 <button onclick="editTour('${tour.id}')" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="Editar"><i class="ph-bold ph-pencil-simple"></i></button>
                                 <button onclick="startTour('${tour.id}')" class="flex-grow py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold transition">Iniciar</button>
-                                <button onclick="exportSingleTourAsJSON('${tour.id}')" class="p-3 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition" title="Exportar JSON"><i class="ph-bold ph-download-simple"></i></button>
                             </div>
                         </div>
                     `;
@@ -209,29 +221,57 @@
             return html + `</div>`;
         }
 
+        // Simula la vista prèvia dins de l'editor
+        function renderStepPreviewSimulator() {
+            if (state.draftTour.steps.length === 0) return '<div class="p-8 text-center text-slate-400 mt-20">Seleccioneu una etapa per previsualitzar-la aquí</div>';
+            
+            const step = state.draftTour.steps[state.previewStepIndex];
+            if (!step) return '';
+
+            let mediaHtml = renderMedia(step);
+            let contentHtml = '';
+            
+            if (step.type === 'stage') {
+                contentHtml = `<div class="bg-slate-800 text-white p-6 rounded-2xl text-center border-4 border-slate-700 mb-4">${mediaHtml}<h2 class="text-2xl font-black uppercase">${step.title}</h2></div><button class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Començar etapa</button>`;
+            } else if (step.type === 'info') {
+                contentHtml = `<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4">${mediaHtml}<p class="text-slate-700 text-sm">${step.content}</p></div><button class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Següent</button>`;
+            } else if (step.type === 'quiz') {
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.map(o=>`<div class="p-3 border-2 rounded-xl text-slate-700 text-sm font-medium">${o}</div>`).join('')}</div></div>`;
+            } else if (step.type === 'question') {
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4 text-sm" placeholder="Escriu aquí..."><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Enviar</button></div>`;
+            } else if (step.type === 'mission') {
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h2 class="font-bold text-sm mb-2">Missió</h2><p class="mb-4 text-xs">${step.instruction}</p>${mediaHtml}<textarea class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" rows="2"></textarea><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Completar</button></div>`;
+            } else if (step.type === 'sort') {
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.instruction}</h3>${mediaHtml}<div class="space-y-2">${step.correctOrder.map((o,i)=>`<div class="p-3 border-2 rounded-xl text-slate-700 text-xs font-medium flex gap-2"><span class="font-bold text-slate-400">${i+1}.</span> ${o}</div>`).join('')}</div><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mt-4">Comprovar Ordre</button></div>`;
+            } else if (step.type === 'ar_exp') {
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase block mb-2">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p><img src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
+            } else if (step.type === 'find_spot') {
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p><div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
+            } else if (step.type === 'scan_code') {
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
+            } else if (step.type === 'survey') {
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.filter(o=>o).map(o=>`<div class="p-3 border-2 rounded-xl text-slate-700 text-sm font-medium">${o}</div>`).join('')}</div></div>`;
+            }
+
+            return `
+                <div class="p-4 pt-6 min-h-full flex flex-col pointer-events-none">
+                    <div class="mb-4">
+                        <div class="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1"><span>${state.draftTour.title || 'Ruta sense títol'}</span><span>Pas ${state.previewStepIndex+1}/${state.draftTour.steps.length}</span></div>
+                        <div class="w-full bg-slate-200 rounded-full h-1"><div class="bg-emerald-500 h-1 rounded-full" style="width: ${((state.previewStepIndex)/state.draftTour.steps.length)*100}%"></div></div>
+                    </div>
+                    ${contentHtml}
+                </div>
+            `;
+        }
+
         function renderCreate() {
             let stepsHtml = state.draftTour.steps.length === 0 ? `<div class="text-center py-8 text-slate-400 bg-white rounded-xl border border-dashed border-slate-300">Utilitzeu els botons inferiors per afegir contingut.</div>` : 
                 state.draftTour.steps.map((step, index) => {
                     const visuals = getVisualsForStepType(step.type);
-                    
-                    let thumbHtml = '';
-                    if (step.mediaType && step.mediaType !== 'none') {
-                        if (step.mediaType === 'image' && step.mediaUrl) {
-                            thumbHtml = `<img src="${step.mediaUrl}" class="w-14 h-14 object-cover rounded-md border border-slate-200 shrink-0" onerror="this.style.display='none'">`;
-                        } else {
-                            let mIcon = 'ph-link';
-                            if(step.mediaType==='video') mIcon='ph-video-camera';
-                            if(step.mediaType==='audio') mIcon='ph-headphones';
-                            if(step.mediaType==='3d') mIcon='ph-cube';
-                            thumbHtml = `<div class="w-14 h-14 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-center shrink-0"><i class="ph-fill ${mIcon} text-2xl text-slate-400"></i></div>`;
-                        }
-                    }
-                    if (step.type === 'ar_exp' && step.triggerImageB64) {
-                        thumbHtml = `<img src="${step.triggerImageB64}" class="w-14 h-14 object-cover rounded-md border-2 border-teal-300 shrink-0" title="Imatge Trigger">`;
-                    }
+                    const isSelected = state.previewStepIndex === index;
 
                     return `
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 mb-3 flex gap-4 items-start shadow-sm">
+                        <div onclick="setPreviewStep(${index}, event)" class="cursor-pointer bg-white p-4 rounded-xl border-2 ${isSelected ? 'border-emerald-400' : 'border-slate-200'} mb-3 flex gap-4 items-start shadow-sm transition hover:shadow-md">
                             <div class="${visuals.bgClass} ${visuals.textClass} p-3 rounded-lg shrink-0"><i class="${visuals.iconClass} text-xl"></i></div>
                             <div class="flex-grow">
                                 <div class="flex items-center gap-2 mb-1 flex-wrap">
@@ -241,13 +281,9 @@
                                     <span class="text-[10px] font-bold text-slate-400 uppercase">Pas ${index + 1}</span>
                                     ${step.hasGeo ? `<span class="bg-red-100 text-red-600 text-[9px] px-1.5 py-0.5 rounded font-bold"><i class="ph-bold ph-map-pin"></i> GEOBLOCADA</span>` : ''}
                                 </div>
-                                <div class="flex items-center gap-3 mt-2">
-                                    ${thumbHtml}
-                                    <p class="font-bold text-slate-800 line-clamp-2">${step.title || step.question || step.instruction || step.locationHint || 'Sense contingut principal'}</p>
-                                </div>
+                                <p class="font-bold text-slate-800 line-clamp-2 mt-2">${step.title || step.question || step.instruction || step.locationHint || 'Sense contingut principal'}</p>
                             </div>
                             <div class="flex flex-col gap-1 items-center shrink-0">
-                                <button onclick="previewFromStep(${index})" class="text-emerald-500 hover:bg-emerald-50 p-1 rounded transition" title="Provar des d'aquí"><i class="ph-bold ph-play"></i></button>
                                 <button onclick="openModal('${step.type}', ${index})" class="text-blue-500 hover:bg-blue-50 p-1 rounded transition" title="Editar"><i class="ph-bold ph-pencil-simple"></i></button>
                                 <button onclick="moveStep(${index}, -1)" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded transition" ${index === 0 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''} title="Pujar"><i class="ph-bold ph-caret-up"></i></button>
                                 <button onclick="moveStep(${index}, 1)" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded transition" ${index === state.draftTour.steps.length - 1 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''} title="Baixar"><i class="ph-bold ph-caret-down"></i></button>
@@ -258,31 +294,46 @@
                 }).join('');
 
             return `
-                <div class="max-w-2xl mx-auto w-full">
-                    <div class="mb-6 flex justify-between items-center">
-                        <h2 class="text-2xl font-bold text-slate-800">Editor de Ruta</h2>
-                        <button onclick="openModal('save_tour')" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition">Desar Ruta</button>
+                <div class="w-full flex flex-col lg:flex-row gap-6">
+                    <div class="flex-grow max-w-3xl w-full mx-auto">
+                        <div class="mb-6 flex justify-between items-center">
+                            <h2 class="text-2xl font-bold text-slate-800">Editor de Ruta</h2>
+                            <button onclick="openModal('save_tour')" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition text-sm">Desar Ruta</button>
+                        </div>
+                        <div class="bg-slate-100 p-6 rounded-2xl border border-slate-200 mb-6">
+                            <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="ph-fill ph-map-pin-line text-emerald-600"></i> Estructura Temporal</h3>
+                            <div class="mb-6 max-h-[600px] overflow-y-auto pr-2 no-scrollbar">${stepsHtml}</div>
+                            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-4 border-t border-slate-200">
+                                <button onclick="openModal('stage')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-slate-50 transition text-xs font-medium"><i class="ph ph-flag text-2xl mb-1 text-slate-500"></i> Etapa</button>
+                                <button onclick="openModal('info')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-blue-50 transition text-xs font-medium"><i class="ph ph-info text-2xl mb-1 text-blue-500"></i> Info</button>
+                                <button onclick="openModal('quiz')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-purple-50 transition text-xs font-medium"><i class="ph ph-list-checks text-2xl mb-1 text-purple-500"></i> Test</button>
+                                <button onclick="openModal('question')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-indigo-50 transition text-xs font-medium"><i class="ph ph-question text-2xl mb-1 text-indigo-500"></i> Pregunta</button>
+                                <button onclick="openModal('sort')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-yellow-50 transition text-xs font-medium"><i class="ph ph-list-numbers text-2xl mb-1 text-yellow-500"></i> Ordenar</button>
+                                <button onclick="openModal('mission')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-orange-50 transition text-xs font-medium"><i class="ph ph-warning-circle text-2xl mb-1 text-orange-500"></i> Missió</button>
+                                <button onclick="openModal('find_spot')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-red-50 transition text-xs font-medium"><i class="ph ph-map-pin text-2xl mb-1 text-red-500"></i> Lloc GPS</button>
+                                <button onclick="openModal('scan_code')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-emerald-50 transition text-xs font-medium"><i class="ph ph-qr-code text-2xl mb-1 text-emerald-500"></i> Codi</button>
+                                <button onclick="openModal('ar_exp')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-teal-50 transition text-xs font-medium"><i class="ph ph-cube text-2xl mb-1 text-teal-500"></i> AR</button>
+                                <button onclick="openModal('survey')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-pink-50 transition text-xs font-medium"><i class="ph ph-chart-pie-slice text-2xl mb-1 text-pink-500"></i> Enquesta</button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="bg-slate-100 p-6 rounded-2xl border border-slate-200 mb-6">
-                        <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="ph-fill ph-map-pin-line text-emerald-600"></i> Estructura</h3>
-                        <div class="mb-6">${stepsHtml}</div>
-                        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 pt-4 border-t border-slate-200">
-                            <button onclick="openModal('stage')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-slate-50 transition text-xs font-medium"><i class="ph ph-flag text-2xl mb-1 text-slate-500"></i> Etapa</button>
-                            <button onclick="openModal('info')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-blue-50 transition text-xs font-medium"><i class="ph ph-info text-2xl mb-1 text-blue-500"></i> Info</button>
-                            <button onclick="openModal('quiz')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-purple-50 transition text-xs font-medium"><i class="ph ph-list-checks text-2xl mb-1 text-purple-500"></i> Test</button>
-                            <button onclick="openModal('question')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-indigo-50 transition text-xs font-medium"><i class="ph ph-question text-2xl mb-1 text-indigo-500"></i> Pregunta</button>
-                            <button onclick="openModal('mission')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-orange-50 transition text-xs font-medium"><i class="ph ph-warning-circle text-2xl mb-1 text-orange-500"></i> Missió</button>
-                            <button onclick="openModal('find_spot')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-red-50 transition text-xs font-medium"><i class="ph ph-map-pin text-2xl mb-1 text-red-500"></i> Lloc GPS</button>
-                            <button onclick="openModal('ar_exp')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-teal-50 transition text-xs font-medium"><i class="ph ph-cube text-2xl mb-1 text-teal-500"></i> AR</button>
-                            <button onclick="openModal('survey')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-pink-50 transition text-xs font-medium"><i class="ph ph-chart-pie-slice text-2xl mb-1 text-pink-500"></i> Enquesta</button>
-                            <button onclick="openModal('scan_code')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-emerald-50 transition text-xs font-medium"><i class="ph ph-qr-code text-2xl mb-1 text-emerald-500"></i> Codi</button>
+                    
+                    <div class="hidden lg:flex flex-col items-center justify-start pt-16">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Simulador Mòbil</span>
+                        <div class="mobile-simulator">
+                            ${renderStepPreviewSimulator()}
                         </div>
                     </div>
                 </div>
             `;
         }
 
-        // Filer Reader handle for Base64 image
+        function setPreviewStep(idx, e) {
+            if (e && (e.target.closest('button') || e.target.tagName.toLowerCase() === 'button')) return;
+            state.previewStepIndex = idx;
+            renderView();
+        }
+
         function handleTriggerUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -365,14 +416,17 @@
                         <label class="block text-sm font-bold text-slate-700 mb-2">Descripció o sinopsi</label>
                         <textarea id="modalTourDesc" rows="3" class="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none transition" placeholder="Expliqueu breument de què tracta aquesta aventura...">${state.draftTour.description}</textarea>
                     </div>
-                    <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl mt-6">
-                        <p class="text-sm text-blue-800 font-medium leading-relaxed"><i class="ph-bold ph-info"></i> Com voleu desar-ho? Podeu emmagatzemar la ruta a la llista d'aquesta sessió o descarregar-la directament al vostre dispositiu en un arxiu format JSON.</p>
+                    <div class="mb-4 border-t border-slate-200 pt-4">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">URL de Google Sheets (Opcional - per rebre resultats globals)</label>
+                        <input type="text" id="modalTourTracking" value="${state.draftTour.trackingUrl || ''}" class="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none transition" placeholder="https://script.google.com/macros/s/...">
+                        <p class="text-xs text-slate-500 mt-1">El registre s'enviarà junt en acabar la ruta.</p>
                     </div>
                 `;
                 footerHtml = `
                     <div class="flex flex-col gap-3 mt-6 border-t border-slate-100 pt-6">
-                        <button onclick="finalizeSaveTour(false)" class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md"><i class="ph-bold ph-list-plus text-xl"></i> Desar a la llista local</button>
-                        <button onclick="finalizeSaveTour(true)" class="w-full py-3 bg-white border-2 border-blue-200 hover:border-blue-400 text-blue-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-download-simple text-xl"></i> Exportar com a fitxer JSON</button>
+                        <button onclick="finalizeSaveTour(false, false)" class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md"><i class="ph-bold ph-list-plus text-xl"></i> Desar a la llista local</button>
+                        <button onclick="finalizeSaveTour(true, true)" class="w-full py-3 bg-white border-2 border-blue-200 hover:border-blue-400 text-blue-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-download-simple text-xl"></i> Desar com a fitxer JSON</button>
+                        <button onclick="generateAutonomousHTML()" class="w-full py-3 bg-white border-2 border-purple-200 hover:border-purple-400 text-purple-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-file-html text-xl"></i> Generar ruta HTML (Autònoma)</button>
                         <button onclick="closeModal()" class="w-full py-3 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-xl font-bold transition mt-2">Cancel·lar i seguir editant</button>
                     </div>
                 `;
@@ -387,7 +441,13 @@
                 <div class="mb-4"><label class="block font-bold">Respostes</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2"><input type="radio" name="correctOpt" value="${i}" ${editData.correct===i?'checked':''}> <input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-blue-500">+ Afegir opció</button></div>`;
             } else if (type === 'question') {
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Pregunta Oberta</label><input type="text" id="modalInput1" value="${editData.question||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}
+                <div class="mb-4"><label class="block font-bold">Punts (1r intent / Següents)</label><div class="flex gap-2"><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-2 border"><input type="number" id="modalScore2" value="${editData.scoreNextTries||5}" class="w-full p-2 border"></div></div>
                 <div class="mb-4"><label class="block font-bold">Respostes correctes (una per línia)</label><textarea id="modalInput2" class="w-full p-3 border rounded-xl">${(editData.validAnswers||[]).join('\n')}</textarea></div>`;
+            } else if (type === 'sort') {
+                state.modalState.tempQuizOptions = editData.correctOrder || ['', '', ''];
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Instrucció per ordenar</label><input type="text" id="modalInput1" value="${editData.instruction||''}" class="w-full p-3 border rounded-xl" placeholder="Ordena els elements..."></div>${mediaHtml}
+                <div class="mb-4"><label class="block font-bold">Punts (1r intent / Següents)</label><div class="flex gap-2"><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-2 border"><input type="number" id="modalScore2" value="${editData.scoreNextTries||5}" class="w-full p-2 border"></div></div>
+                <div class="mb-4"><label class="block font-bold">Conceptes en ordre correcte</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2 items-center"><span class="font-bold text-slate-400 w-6">${i+1}.</span><input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-yellow-500 font-bold">+ Afegir element</button></div>`;
             } else if (type === 'find_spot') {
                 formHtml = `<div class="mb-4"><label class="block font-bold">Indicació del Lloc</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.locationHint||''}</textarea></div>
                 <div id="creatorMap" class="w-full h-48 bg-slate-200 rounded-xl mb-4"></div><label class="block font-bold">Radi (m)</label><input type="number" id="modalRadius" value="${editData.targetRadius||30}" class="w-full p-3 border rounded-xl" onchange="updateMapCircle(this.value)">
@@ -406,8 +466,8 @@
                 <div class="mb-4">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Imatge d'Activació (Pugeu l'arxiu per detecció Real)</label>
                     <input type="file" id="modalInputTriggerFile" accept="image/*" onchange="handleTriggerUpload(event)" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg">
-                    <input type="hidden" id="modalInputTriggerB64" value="${editData.triggerImageB64 || ''}">
-                    <input type="hidden" id="modalInputTriggerTemplate" value="${editData.triggerTemplateB64 || ''}">
+                    <input type="hidden" id="modalInputTriggerB64" value="">
+                    <input type="hidden" id="modalInputTriggerTemplate" value="">
                     <img id="triggerPreview" src="${editData.triggerImageB64 || ''}" class="h-24 mt-3 rounded-lg border-2 border-teal-200 object-cover shadow-sm" style="display: ${editData.triggerImageB64 ? 'block' : 'none'}">
                 </div>
                 <div class="mb-4">
@@ -447,7 +507,7 @@
             return `
                 <div class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
-                        <h3 class="text-xl font-bold mb-6 flex items-center gap-2"><i class="${visuals.iconClass} text-2xl text-slate-400"></i> ${type==='save_tour' ? 'Finalitzar' : (editIndex!==null?'Editar':'Afegir')} ${visuals.label}</h3>
+                        <h3 class="text-xl font-bold mb-6 flex items-center gap-2"><i class="${visuals.iconClass} text-2xl text-slate-400"></i> ${type==='save_tour' ? 'Desar' : (editIndex!==null?'Editar':'Afegir')} ${visuals.label}</h3>
                         ${formHtml}
                         ${footerHtml}
                     </div>
@@ -543,6 +603,33 @@
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
                         <input type="text" id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="Escriu aquí...">
                         <button onclick="verifyText('question')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Enviar</button></div>`;
+                } else if (step.type === 'sort') {
+                    if (!state.playState.currentSortOrder) {
+                        let arr = [...step.correctOrder];
+                        for(let i = arr.length - 1; i > 0; i--){
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [arr[i], arr[j]] = [arr[j], arr[i]];
+                        }
+                        if (arr.join() === step.correctOrder.join() && arr.length > 1) {
+                            [arr[0], arr[1]] = [arr[1], arr[0]];
+                        }
+                        state.playState.currentSortOrder = arr;
+                    }
+                    
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.instruction}</h3>${media}
+                        <div class="flex flex-col gap-2 mt-4">
+                            ${state.playState.currentSortOrder.map((item, i) => `
+                                <div class="flex items-center gap-3 bg-white p-3 border-2 border-slate-200 rounded-xl">
+                                    <span class="font-bold text-slate-400 w-6">${i+1}.</span>
+                                    <span class="flex-grow font-medium text-slate-800">${item}</span>
+                                    <div class="flex flex-col gap-1">
+                                        <button onclick="moveSortItem(${i}, -1)" class="p-1 text-slate-400 hover:text-slate-700 bg-slate-100 rounded" ${i===0?'disabled style="opacity:0.3"':''}><i class="ph-bold ph-caret-up"></i></button>
+                                        <button onclick="moveSortItem(${i}, 1)" class="p-1 text-slate-400 hover:text-slate-700 bg-slate-100 rounded" ${i===state.playState.currentSortOrder.length-1?'disabled style="opacity:0.3"':''}><i class="ph-bold ph-caret-down"></i></button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <button onclick="verifySort()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold mt-6">Comprovar Ordre</button></div>`;
                 } else if (step.type === 'mission') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h2 class="font-bold mb-4">Missió</h2><p class="mb-6">${step.instruction}</p>${media}
                         <textarea id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-4" rows="4"></textarea>
@@ -606,12 +693,13 @@
                 'info': { label: 'Informació', iconClass: 'ph-info', bgClass: 'bg-blue-100', textClass: 'text-blue-600' },
                 'quiz': { label: 'Test', iconClass: 'ph-list-checks', bgClass: 'bg-purple-100', textClass: 'text-purple-600' },
                 'question': { label: 'Pregunta', iconClass: 'ph-question', bgClass: 'bg-indigo-100', textClass: 'text-indigo-600' },
+                'sort': { label: 'Ordenar', iconClass: 'ph-list-numbers', bgClass: 'bg-yellow-100', textClass: 'text-yellow-600' },
                 'mission': { label: 'Missió', iconClass: 'ph-warning-circle', bgClass: 'bg-orange-100', textClass: 'text-orange-600' },
                 'find_spot': { label: 'Lloc', iconClass: 'ph-map-pin', bgClass: 'bg-red-100', textClass: 'text-red-600' },
                 'scan_code': { label: 'Codi', iconClass: 'ph-qr-code', bgClass: 'bg-emerald-100', textClass: 'text-emerald-600' },
                 'ar_exp': { label: 'AR', iconClass: 'ph-cube', bgClass: 'bg-teal-100', textClass: 'text-teal-600' },
                 'survey': { label: 'Enquesta', iconClass: 'ph-chart-pie-slice', bgClass: 'bg-pink-100', textClass: 'text-pink-600' },
-                'save_tour': { label: 'Finalitzar i Desar', iconClass: 'ph-floppy-disk', bgClass: 'bg-emerald-100', textClass: 'text-emerald-600' }
+                'save_tour': { label: 'Desar', iconClass: 'ph-floppy-disk', bgClass: 'bg-emerald-100', textClass: 'text-emerald-600' }
             };
             return map[type] || map['info'];
         }
@@ -701,9 +789,15 @@
 
         function openModal(type, editIndex = null) {
             state.modalState = { isOpen: true, type, editIndex, tempQuizOptions: [] };
+            if (type === 'quiz' || type === 'survey' || type === 'sort') {
+                const editData = editIndex !== null ? state.draftTour.steps[editIndex] : {};
+                state.modalState.tempQuizOptions = editData.options || editData.correctOrder || ['', ''];
+                state.modalState.tempQuizCorrect = editData.correct !== undefined ? editData.correct : 0;
+            }
             renderModal();
-            setTimeout(() => { if (document.getElementById('modalTourTitle')) document.getElementById('modalTourTitle').focus(); }, 100);
+            setTimeout(() => { if (document.getElementById('modalTourTitle')) document.getElementById('modalTourTitle').focus(); else if (document.getElementById('modalInput1')) document.getElementById('modalInput1').focus(); }, 100);
         }
+        
         function closeModal() { if (mapInstance) { mapInstance.remove(); mapInstance = null; } state.modalState.isOpen = false; renderModal(); }
 
         function saveStepFromModal() {
@@ -731,6 +825,11 @@
             } else if (type === 'question') {
                 stepData.question = v1;
                 stepData.validAnswers = document.getElementById('modalInput2').value.split('\n').map(a=>a.trim().toLowerCase());
+            } else if (type === 'sort') {
+                stepData.instruction = v1;
+                stepData.correctOrder = state.modalState.tempQuizOptions.map((o,i)=>document.getElementById('opt'+i).value.trim());
+                stepData.scoreFirstTry = parseInt(document.getElementById('modalScore1').value);
+                stepData.scoreNextTries = parseInt(document.getElementById('modalScore2').value);
             } else if (type === 'find_spot') {
                 stepData.locationHint = v1;
             } else if (type === 'mission') {
@@ -747,7 +846,7 @@
                 const triggerTemplateB64 = document.getElementById('modalInputTriggerTemplate').value;
 
                 if(!v1) return showDialog("Falta escriure la instrucció de l'experiència de Realitat Augmentada.");
-                if(!triggerImageB64) return showDialog("Heu d'afegir una Imatge d'Activació (Trigger) pujant un fitxer.");
+                if(!triggerImageB64 && editIndex === null) return showDialog("Heu d'afegir una Imatge d'Activació (Trigger) pujant un fitxer.");
                 if(arType !== 'text' && !arUrl) return showDialog("Falta afegir la URL del recurs multimèdia escollit.");
                 if(arType === 'text' && !arText) return showDialog("Falta escriure el text del missatge ocult flotant.");
 
@@ -776,20 +875,22 @@
 
         function removeStep(i) { state.draftTour.steps.splice(i, 1); renderView(); }
         function moveStep(i, d) { const steps = state.draftTour.steps; const j = i + d; if (j>=0 && j<steps.length) { [steps[i], steps[j]] = [steps[j], steps[i]]; renderView(); } }
+        function moveSortItem(i, d) { const arr = state.playState.currentSortOrder; const j = i + d; if (j>=0 && j<arr.length) { [arr[i], arr[j]] = [arr[j], arr[i]]; renderView(); } }
 
         function addQuizOption() { state.modalState.tempQuizOptions.push(''); renderModal(); }
         function removeQuizOption(i) { state.modalState.tempQuizOptions.splice(i, 1); renderModal(); }
 
-        function startCreation() { state.draftTour = { id: null, title: '', description: '', steps: [] }; navigateTo('create'); }
+        function startCreation() { state.draftTour = { id: null, title: '', description: '', steps: [], trackingUrl: '' }; navigateTo('create'); }
         function editTour(id) { state.draftTour = JSON.parse(JSON.stringify(state.tours.find(t=>t.id===id))); navigateTo('create'); }
         
-        // --- FUNCIÓ FINALITZAR DESAR CORREGIDA ---
-        function finalizeSaveTour(downloadAsJson = false) {
+        function finalizeSaveTour(downloadAsJson = false, keepEditing = false) {
             const titleEl = document.getElementById('modalTourTitle');
             const descEl = document.getElementById('modalTourDesc');
+            const trackEl = document.getElementById('modalTourTracking');
             
             if (titleEl) state.draftTour.title = titleEl.value.trim();
             if (descEl) state.draftTour.description = descEl.value.trim();
+            if (trackEl) state.draftTour.trackingUrl = trackEl.value.trim();
             
             if (!state.draftTour.title) {
                 return showDialog("Cal afegir un títol a la ruta abans de desar-la.");
@@ -816,15 +917,120 @@
 
             if (downloadAsJson && savedTour) {
                 triggerDownloadJSON(savedTour);
+                if (keepEditing) {
+                    showDialog("El fitxer JSON s'ha descarregat correctament. Podeu continuar editant la ruta.");
+                    return; 
+                }
             }
 
             closeModal();
             navigateTo('list');
         }
 
+        function triggerDownloadJSON(tourObj) {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify([tourObj], null, 2));
+            const dl = document.createElement('a');
+            dl.setAttribute("href", dataStr);
+            dl.setAttribute("download", `${(tourObj.title || 'ruta').replace(/[^a-z0-9]/gi, '_').toLowerCase()}_rutaviva.json`);
+            document.body.appendChild(dl); 
+            dl.click();
+            dl.remove();
+        }
+
+        function generateAutonomousHTML() {
+            const titleEl = document.getElementById('modalTourTitle');
+            const descEl = document.getElementById('modalTourDesc');
+            const trackEl = document.getElementById('modalTourTracking');
+            
+            if (titleEl) state.draftTour.title = titleEl.value.trim();
+            if (descEl) state.draftTour.description = descEl.value.trim();
+            if (trackEl) state.draftTour.trackingUrl = trackEl.value.trim();
+            
+            if (!state.draftTour.title) return showDialog("Cal afegir un títol a la ruta.");
+            if (state.draftTour.steps.length === 0) return showDialog("Cal afegir almenys un contingut o etapa a la ruta.");
+
+            let tourToExport = { ...state.draftTour, id: 'r-' + Date.now() };
+            
+            let htmlContent = document.documentElement.outerHTML;
+            
+            const scriptToInject = `
+                // Codi injectat per generar l'experiència autònoma
+                window.onload = () => {
+                    state.tours = [${JSON.stringify(tourToExport)}];
+                    state.view = 'play';
+                    state.playState = { 
+                        tourId: '${tourToExport.id}', 
+                        currentStep: 0, 
+                        score: 0, 
+                        attempts: {}, 
+                        feedbackMsg: null, 
+                        geoVerified: false, 
+                        maxScore: ${tourToExport.steps.reduce((a,s) => a + (s.scoreFirstTry || 10), 0)},
+                        stepStartTime: Date.now(),
+                        interactionLogs: []
+                    };
+                    renderAll();
+                };
+            `;
+            
+            htmlContent = htmlContent.replace(/window\.onload = \(\) => renderAll\(\);/, scriptToInject);
+            
+            const blob = new Blob(["<!DOCTYPE html>\n<html lang=\"ca\">\n" + htmlContent + "\n</html>"], {type: "text/html;charset=utf-8"});
+            const dl = document.createElement('a');
+            dl.href = URL.createObjectURL(blob);
+            dl.download = `${tourToExport.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_rutaviva_autonoma.html`;
+            document.body.appendChild(dl);
+            dl.click();
+            dl.remove();
+            showDialog("S'ha generat i descarregat l'arxiu HTML. Aquest arxiu es pot obrir en qualsevol navegador per jugar la ruta de forma directa, i ja conté totes les dades incloses.");
+        }
+
+        // --- SISTEMA DE SEGUIMENT I RESPOSTES ---
+        function logInteraction(action, answer, score) {
+            const tour = state.tours.find(t => t.id === state.playState.tourId);
+            if (!tour || !tour.trackingUrl) return;
+            
+            const step = tour.steps[state.playState.currentStep];
+            const elapsed = Date.now() - (state.playState.stepStartTime || Date.now());
+            
+            state.playState.interactionLogs.push({
+                pas: state.playState.currentStep + 1,
+                tipus_activitat: step.type,
+                accio: action,
+                resposta: answer || '',
+                puntuacio: score || 0,
+                temps_segons: Math.round(elapsed / 1000),
+                data_hora: new Date().toISOString()
+            });
+        }
+        
+        function sendFinalLogs() {
+            const tour = state.tours.find(t => t.id === state.playState.tourId);
+            if (!tour || !tour.trackingUrl || state.playState.interactionLogs.length === 0) return;
+            
+            const payload = {
+                ruta: tour.title,
+                puntuacio_total: state.playState.score,
+                max_puntuacio: state.playState.maxScore,
+                finalitzat: new Date().toISOString(),
+                detalls: state.playState.interactionLogs
+            };
+            
+            fetch(tour.trackingUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).catch(e => console.log('Notes: Tracking no enviat', e));
+        }
+
         function startTour(id) {
             const tour = state.tours.find(t=>t.id===id);
-            state.playState = { tourId: id, currentStep: 0, score: 0, attempts: {}, feedbackMsg: null, geoVerified: false, maxScore: tour.steps.length*10 };
+            const maxScore = tour.steps.reduce((acc, step) => {
+                if (step.type === 'quiz' || step.type === 'question' || step.type === 'sort') return acc + (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
+                return acc;
+            }, 0);
+            state.playState = { tourId: id, currentStep: 0, score: 0, attempts: {}, feedbackMsg: null, geoVerified: false, maxScore: maxScore, stepStartTime: Date.now(), interactionLogs: [], currentSortOrder: null };
             navigateTo('play');
         }
 
@@ -841,38 +1047,108 @@
 
         function answerQuiz(i) {
             const step = state.tours.find(t=>t.id===state.playState.tourId).steps[state.playState.currentStep];
-            if (i === step.correct) { state.playState.score += 10; state.playState.feedbackMsg = "Correcte!"; state.playState.feedbackType = 'success'; }
-            else { state.playState.feedbackMsg = "Incorrecte."; state.playState.feedbackType = 'error'; }
+            if (!state.playState.attempts) state.playState.attempts = {};
+            const stepIndex = state.playState.currentStep;
+            if (state.playState.attempts[stepIndex] === undefined) state.playState.attempts[stepIndex] = 0;
+            
+            const isFirstTry = state.playState.attempts[stepIndex] === 0;
+            state.playState.attempts[stepIndex]++;
+
+            if (i === step.correct) { 
+                const scoreToAdd = isFirstTry ? (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10) : (step.scoreNextTries !== undefined ? step.scoreNextTries : 5);
+                state.playState.score += scoreToAdd;
+                state.playState.feedbackMsg = step.successMsg || "Correcte!"; 
+                state.playState.feedbackType = 'success'; 
+            } else { 
+                state.playState.feedbackMsg = step.errorMsg || "Incorrecte."; 
+                state.playState.feedbackType = 'error'; 
+            }
+            logInteraction('Respon Test', step.options[i], state.playState.score);
             renderView();
         }
 
         function verifyText(type) {
             const input = document.getElementById('playInput').value.trim().toLowerCase();
             const step = state.tours.find(t=>t.id===state.playState.tourId).steps[state.playState.currentStep];
+            
+            if (!state.playState.attempts) state.playState.attempts = {};
+            const stepIndex = state.playState.currentStep;
+            if (state.playState.attempts[stepIndex] === undefined) state.playState.attempts[stepIndex] = 0;
+            const isFirstTry = state.playState.attempts[stepIndex] === 0;
+            state.playState.attempts[stepIndex]++;
+
             if (type === 'question') {
-                if (step.validAnswers.includes(input)) { state.playState.score += 10; state.playState.feedbackMsg = "Molt bé!"; state.playState.feedbackType = 'success'; }
-                else { state.playState.feedbackMsg = "No és correcte."; state.playState.feedbackType = 'error'; }
-            } else { state.playState.score += 5; state.playState.feedbackMsg = "Missió completada."; state.playState.feedbackType = 'success'; }
+                if (step.validAnswers.includes(input)) { 
+                    const scoreToAdd = isFirstTry ? (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10) : (step.scoreNextTries !== undefined ? step.scoreNextTries : 5);
+                    state.playState.score += scoreToAdd;
+                    state.playState.feedbackMsg = step.successMsg || "Molt bé!"; 
+                    state.playState.feedbackType = 'success'; 
+                } else { 
+                    state.playState.feedbackMsg = step.errorMsg || "No és correcte."; 
+                    state.playState.feedbackType = 'error'; 
+                }
+            } else if (type === 'scan_code') {
+                if (input === step.code.toLowerCase()) {
+                    state.playState.feedbackMsg = "Codi validat correctament!";
+                    state.playState.feedbackType = 'success';
+                } else {
+                    state.playState.feedbackMsg = "Codi invàlid. Torneu a comprovar-ho.";
+                    state.playState.feedbackType = 'error';
+                }
+            } else { 
+                state.playState.score += 5; 
+                state.playState.feedbackMsg = "Missió completada."; 
+                state.playState.feedbackType = 'success'; 
+            }
+            logInteraction(type === 'question' ? 'Respon Obertament' : 'Introdueix Codi/Missió', input, state.playState.score);
+            renderView();
+        }
+
+        function verifySort() {
+            const step = state.tours.find(t=>t.id===state.playState.tourId).steps[state.playState.currentStep];
+            const currentOrder = state.playState.currentSortOrder;
+            const isCorrect = step.correctOrder.every((item, i) => item === currentOrder[i]);
+            
+            if (!state.playState.attempts) state.playState.attempts = {};
+            const stepIndex = state.playState.currentStep;
+            if (state.playState.attempts[stepIndex] === undefined) state.playState.attempts[stepIndex] = 0;
+            const isFirstTry = state.playState.attempts[stepIndex] === 0;
+            state.playState.attempts[stepIndex]++;
+
+            if (isCorrect) {
+                const scoreToAdd = isFirstTry ? (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10) : (step.scoreNextTries !== undefined ? step.scoreNextTries : 5);
+                state.playState.score += scoreToAdd;
+                state.playState.feedbackMsg = "Ordre correcte! Molt bé.";
+                state.playState.feedbackType = 'success';
+            } else {
+                state.playState.feedbackMsg = "L'ordre no és correcte. Torneu-ho a provar.";
+                state.playState.feedbackType = 'error';
+            }
+            logInteraction('Respon Ordenar', currentOrder.join(', '), state.playState.score);
             renderView();
         }
 
         function nextStep() {
             state.playState.feedbackMsg = null;
             state.playState.geoVerified = false;
-            if (state.playState.currentStep < state.tours.find(t=>t.id===state.playState.tourId).steps.length - 1) {
+            state.playState.currentSortOrder = null;
+            
+            const tour = state.tours.find(t=>t.id===state.playState.tourId);
+            
+            if (state.playState.currentStep < tour.steps.length - 1) {
                 state.playState.currentStep++;
+                state.playState.stepStartTime = Date.now();
                 renderView();
-            } else navigateTo('summary');
+            } else {
+                sendFinalLogs();
+                navigateTo('summary');
+            }
         }
 
         function retryStep() { state.playState.feedbackMsg = null; renderView(); }
-        function confirmExit() { showDialog("Vols sortir?", "confirm", () => navigateTo('list')); }
-        function exportSingleTourAsJSON(id) { const tour = state.tours.find(t=>t.id===id); const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify([tour])); const dl = document.createElement('a'); dl.setAttribute("href", data); dl.setAttribute("download", "ruta.json"); dl.click(); }
-        function importTours(e) { const f = e.target.files[0]; const reader = new FileReader(); reader.onload = ev => { try { JSON.parse(ev.target.result).forEach(t => state.tours.push(t)); navigateTo('list'); } catch(err) { showDialog("Error JSON"); } }; reader.readAsText(f); }
+        function confirmExit() { showDialog("Vols sortir de l'experiència?", "confirm", () => navigateTo('list')); }
 
-        function getEmbedUrl(u) { if (!u) return ''; if (u.includes('youtube.com/watch?v=')) return `https://www.youtube.com/embed/${new URL(u).searchParams.get('v')}`; if (u.includes('youtu.be/')) return `https://www.youtube.com/embed/${u.split('youtu.be/')[1]}`; return u; }
-
-        // --- CÀMERA AR I DETECCIÓ VISUAL ---
+        // --- CÀMERA AR I DETECCIÓ VISUAL AVANÇADA ---
         function startARCamera() {
             const container = document.getElementById('ar-fullscreen-container');
             const videoElement = document.getElementById('ar-video-feed');
@@ -891,6 +1167,7 @@
             scanUI.classList.remove('hidden');
 
             arScanActive = true;
+            window.arMatchFrames = 0;
 
             navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
                 .then(stream => {
@@ -938,20 +1215,30 @@
                     ctx.drawImage(video, sx, sy, size, size, 0, 0, 16, 16);
                     const videoData = ctx.getImageData(0,0,16,16).data;
 
-                    let diff = 0;
+                    let r1=0, g1=0, b1=0;
                     for(let i=0; i<videoData.length; i+=4) {
-                        let g1 = (videoData[i] + videoData[i+1] + videoData[i+2]) / 3;
-                        let g2 = (window.arTemplateData[i] + window.arTemplateData[i+1] + window.arTemplateData[i+2]) / 3;
-                        diff += Math.abs(g1 - g2);
+                        r1 += videoData[i]; g1 += videoData[i+1]; b1 += videoData[i+2];
                     }
-                    const avgDiff = diff / 256; 
+                    r1 /= 256; g1 /= 256; b1 /= 256; 
 
-                    // MSE Detection Threshold: if avg pixel variation is < 50, trigger.
-                    if (avgDiff < 50) { 
-                        arScanActive = false;
-                        window.arTemplateData = null;
-                        window.arTemplateImg = null;
-                        return revealARContent();
+                    let r2=0, g2=0, b2=0;
+                    for(let i=0; i<window.arTemplateData.length; i+=4) {
+                        r2 += window.arTemplateData[i]; g2 += window.arTemplateData[i+1]; b2 += window.arTemplateData[i+2];
+                    }
+                    r2 /= 256; g2 /= 256; b2 /= 256;
+
+                    let colorDiff = Math.abs(r1-r2) + Math.abs(g1-g2) + Math.abs(b1-b2);
+                    
+                    if (colorDiff < 45) { 
+                        window.arMatchFrames = (window.arMatchFrames || 0) + 1;
+                        if (window.arMatchFrames > 15) { 
+                            arScanActive = false;
+                            window.arTemplateData = null;
+                            window.arTemplateImg = null;
+                            return revealARContent();
+                        }
+                    } else {
+                        window.arMatchFrames = 0;
                     }
                 }
             }
@@ -960,6 +1247,8 @@
         }
 
         function revealARContent() {
+            logInteraction('Detecta AR', 'Imatge activadora detectada', 0);
+            
             const step = state.tours.find(t => t.id === state.playState.tourId).steps[state.playState.currentStep];
             document.getElementById('ar-scan-ui').classList.add('hidden');
             
