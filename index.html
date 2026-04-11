@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RutaViva - Experiències Gamificades</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #0f172a; }
+        .fade-in { animation: fadeIn 0.4s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 0.5rem; }
+        .video-container iframe, .video-container video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        model-viewer { width: 100%; height: 300px; background-color: #f1f5f9; border-radius: 0.75rem; border: 1px solid #e2e8f0; }
+        .pulse-red { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        
+        @keyframes scan {
+            0% { top: 0; }
+            50% { top: 100%; }
+            100% { top: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app" class="min-h-screen flex flex-col relative z-0"></div>
+    <div id="modal-container" class="relative z-[50]"></div>
+    <div id="dialog-container" class="relative z-[200]"></div>
+
+    <div id="ar-fullscreen-container" class="fixed inset-0 z-[100] hidden bg-black flex flex-col">
+        <video id="ar-video-feed" class="absolute inset-0 w-full h-full object-cover" autoplay playsinline></video>
+        <div id="ar-scan-ui" class="absolute inset-0 flex flex-col items-center justify-center z-10">
+            <div id="ar-ghost-container" class="relative w-72 h-72 border-4 border-dashed border-white/70 rounded-2xl overflow-hidden mb-6 bg-black/20 backdrop-blur-sm flex items-center justify-center shadow-[0_0_0_9999px_rgba(0,0,0,0.7)]">
+                <img id="ar-ghost-image" src="" class="opacity-50 max-w-full max-h-full object-contain pointer-events-none" alt="Alinear imatge">
+                <div id="ar-scan-line" class="hidden w-full h-1.5 bg-emerald-400 absolute top-0 shadow-[0_0_15px_rgba(52,211,153,1)] animate-[scan_2s_ease-in-out_infinite]"></div>
+            </div>
+            <p id="ar-instruction-text" class="text-white text-lg font-bold mb-6 bg-black/70 backdrop-blur px-6 py-3 rounded-full text-center max-w-xs">
+                Cercant la imatge d'activació... Mantingueu el pols.
+            </p>
+            <button onclick="closeARCamera(false)" class="absolute top-6 right-6 w-14 h-14 bg-white/20 backdrop-blur text-white rounded-full flex items-center justify-center"><i class="ph-bold ph-x text-2xl"></i></button>
+        </div>
+        <div id="ar-content-overlay" class="absolute inset-0 hidden bg-black/40 backdrop-blur-sm z-20"></div>
+    </div>
+
+    <script>
+        // Transparent 1x1 pixel base64 for default placeholder
+        const defaultB64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+        const state = {
+            view: 'home', 
+            tours: [
+                {
+                    id: 'demo-1',
+                    title: 'Aventura Completa: Explorant l\'Entorn',
+                    description: 'Ruta d\'exemple que conté totes les funcionalitats: àudio, geolocalització al mapa i Realitat Augmentada amb detecció real d\'imatges.',
+                    steps: [
+                        { type: 'stage', title: 'Benvinguda Multimèdia' },
+                        { type: 'info', content: 'Escolteu aquesta breu introducció d\'àudio abans de començar a caminar.', mediaType: 'audio', mediaUrl: 'https://actions.google.com/sounds/v1/nature/bird_song.ogg' },
+                        { type: 'stage', title: 'Exploració Física i AR' },
+                        { type: 'find_spot', locationHint: 'Aneu fins a la zona marcada al mapa per poder avançar.', targetLat: 41.3851, targetLng: 2.1734 },
+                        { type: 'quiz', question: 'Ara que hi heu arribat, què destaqueu de l\'entorn?', options: ['Arquitectura', 'Natura', 'Silenci', 'Urbanisme'], correct: 0 },
+                        { type: 'question', question: 'Quin és el color de l\'aigua del mar?', validAnswers: ['blau', 'blava', 'turquesa'] },
+                        { 
+                            type: 'ar_exp', 
+                            instruction: 'Enfoqueu amb la càmera la imatge indicada per descobrir el model 3D.', 
+                            triggerImageB64: defaultB64,
+                            triggerTemplateB64: defaultB64,
+                            arType: '3d',
+                            arContent: 'https://modelviewer.dev/shared-assets/models/Astronaut.glb'
+                        },
+                        { type: 'mission', instruction: 'Feu una reflexió ràpida: Quin ús responsable faríeu d\'aquest espai? Escriviu-ho breument.' }
+                    ]
+                }
+            ],
+            draftTour: { id: null, title: '', description: '', steps: [] },
+            playState: { tourId: null, currentStep: 0, score: 0, maxScore: 0, attempts: {}, feedbackMsg: null, feedbackType: null, geoVerified: false },
+            modalState: { isOpen: false, type: null, editIndex: null, tempQuizOptions: [], tempQuizCorrect: 0 },
+            dialogState: { isOpen: false, message: '', type: 'alert', onConfirm: null }
+        };
+
+        let mapInstance = null;
+        let mapMarker = null;
+        let mapCircle = null;
+        let currentVideoStream = null; 
+        let arScanActive = false;
+
+        window.onload = () => renderAll();
+
+        function renderAll() { renderView(); renderModal(); renderDialogUI(); }
+
+        function renderView() {
+            const appContainer = document.getElementById('app');
+            appContainer.innerHTML = `
+                <header class="bg-emerald-600 text-white shadow-md sticky top-0 z-10">
+                    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+                        <div class="flex items-center gap-2 cursor-pointer" onclick="navigateTo('home')">
+                            <i class="ph-fill ph-map-trifold text-3xl"></i>
+                            <h1 class="text-xl font-bold tracking-wide">RutaViva</h1>
+                        </div>
+                        <button onclick="navigateTo('home')" class="p-2 hover:bg-emerald-700 rounded-full transition"><i class="ph ph-house text-2xl"></i></button>
+                    </div>
+                </header>
+            `;
+
+            const mainContent = document.createElement('main');
+            mainContent.className = 'flex-grow max-w-4xl w-full mx-auto p-4 flex flex-col fade-in relative z-0';
+            
+            switch(state.view) {
+                case 'home': mainContent.innerHTML = renderHome(); break;
+                case 'create': mainContent.innerHTML = renderCreate(); break;
+                case 'list': mainContent.innerHTML = renderList(); break;
+                case 'play': mainContent.innerHTML = renderPlay(); break;
+                case 'summary': mainContent.innerHTML = renderSummary(); break;
+            }
+            appContainer.appendChild(mainContent);
+
+            if (state.view === 'play') {
+                const tour = state.tours.find(t => t.id === state.playState.tourId);
+                const step = tour.steps[state.playState.currentStep];
+                if (step && (step.hasGeo || step.type === 'find_spot') && !state.playState.geoVerified && !state.playState.feedbackMsg) {
+                    setTimeout(() => initMapForPlay(step.targetLat, step.targetLng, step.targetRadius || 30), 200);
+                }
+            }
+        }
+
+        function renderModal() {
+            const container = document.getElementById('modal-container');
+            if (state.view === 'create' && state.modalState.isOpen) {
+                container.innerHTML = renderDynamicModal();
+                if (state.modalState.type === 'find_spot' || (document.getElementById('geoControlPanel') && document.getElementById('geoControlPanel').style.display !== 'none')) {
+                    setTimeout(initMapForCreation, 200);
+                }
+            } else { container.innerHTML = ''; }
+        }
+
+        function renderDialogUI() {
+            const container = document.getElementById('dialog-container');
+            if (state.dialogState.isOpen) {
+                const isConfirm = state.dialogState.type === 'confirm';
+                container.innerHTML = `
+                    <div class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+                        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center">
+                            <div class="w-20 h-20 ${isConfirm ? 'bg-orange-100 text-orange-500' : 'bg-blue-100 text-blue-500'} rounded-full flex items-center justify-center mx-auto mb-6">
+                                <i class="ph-fill ${isConfirm ? 'ph-warning-circle' : 'ph-info'} text-4xl"></i>
+                            </div>
+                            <p class="text-xl font-bold text-slate-800 mb-6">${state.dialogState.message}</p>
+                            <div class="flex gap-3 justify-center">
+                                ${isConfirm ? `<button onclick="closeDialog(false)" class="px-5 py-3 text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition">Cancel·lar</button>` : ''}
+                                <button onclick="closeDialog(true)" class="px-6 py-3 ${isConfirm ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-500 hover:bg-blue-600'} text-white rounded-xl font-bold transition">D'acord</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else { container.innerHTML = ''; }
+        }
+
+        function showDialog(message, type = 'alert', onConfirm = null) { state.dialogState = { isOpen: true, message, type, onConfirm }; renderDialogUI(); }
+        function closeDialog(confirmed) { const onConfirm = state.dialogState.onConfirm; state.dialogState.isOpen = false; renderDialogUI(); if (confirmed && onConfirm) onConfirm(); }
+
+        function renderHome() {
+            return `
+                <div class="flex flex-col items-center justify-center flex-grow text-center py-12">
+                    <i class="ph-duotone ph-compass text-8xl text-emerald-500 mb-6"></i>
+                    <h2 class="text-3xl font-extrabold text-slate-800 mb-4">Experiències Interactives</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl mb-12">
+                        <button onclick="navigateTo('list')" class="p-8 bg-white rounded-3xl border border-slate-200 hover:bg-emerald-50 transition group">
+                            <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition"><i class="ph-fill ph-play text-3xl text-emerald-600"></i></div>
+                            <h3 class="text-xl font-bold text-slate-800">Participar</h3>
+                        </button>
+                        <button onclick="startCreation()" class="p-8 bg-white rounded-3xl border border-slate-200 hover:bg-blue-50 transition group">
+                            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition"><i class="ph-fill ph-plus text-3xl text-blue-600"></i></div>
+                            <h3 class="text-xl font-bold text-slate-800">Crear Ruta</h3>
+                        </button>
+                    </div>
+                    <input type="file" id="importFileInputHome" accept=".json" class="hidden" onchange="importTours(event)">
+                    <button onclick="document.getElementById('importFileInputHome').click()" class="px-8 py-4 bg-white border-2 text-slate-700 font-bold rounded-2xl hover:bg-slate-50 transition shadow-sm w-full md:w-auto flex items-center justify-center gap-2 mx-auto">
+                        <i class="ph-bold ph-upload-simple"></i> Carregar rutes JSON
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderList() {
+            let html = `<div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold text-slate-800">Rutes Disponibles</h2><button onclick="navigateTo('home')" class="p-2 bg-slate-200 rounded-full"><i class="ph ph-arrow-left"></i></button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+            if (state.tours.length === 0) {
+                html += `<div class="col-span-2 text-center py-12 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500">No hi ha cap ruta guardada actualment.</div>`;
+            } else {
+                state.tours.forEach(tour => {
+                    html += `
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full">
+                            <h3 class="text-xl font-bold mb-2">${tour.title}</h3>
+                            <p class="text-sm text-slate-500 mb-4 flex-grow line-clamp-2">${tour.description || 'Sense descripció.'}</p>
+                            <div class="flex gap-2 mt-4">
+                                <button onclick="editTour('${tour.id}')" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="Editar"><i class="ph-bold ph-pencil-simple"></i></button>
+                                <button onclick="startTour('${tour.id}')" class="flex-grow py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold transition">Iniciar</button>
+                                <button onclick="exportSingleTourAsJSON('${tour.id}')" class="p-3 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition" title="Exportar JSON"><i class="ph-bold ph-download-simple"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            return html + `</div>`;
+        }
+
+        function renderCreate() {
+            let stepsHtml = state.draftTour.steps.length === 0 ? `<div class="text-center py-8 text-slate-400 bg-white rounded-xl border border-dashed border-slate-300">Utilitzeu els botons inferiors per afegir contingut.</div>` : 
+                state.draftTour.steps.map((step, index) => {
+                    const visuals = getVisualsForStepType(step.type);
+                    
+                    let thumbHtml = '';
+                    if (step.mediaType && step.mediaType !== 'none') {
+                        if (step.mediaType === 'image' && step.mediaUrl) {
+                            thumbHtml = `<img src="${step.mediaUrl}" class="w-14 h-14 object-cover rounded-md border border-slate-200 shrink-0" onerror="this.style.display='none'">`;
+                        } else {
+                            let mIcon = 'ph-link';
+                            if(step.mediaType==='video') mIcon='ph-video-camera';
+                            if(step.mediaType==='audio') mIcon='ph-headphones';
+                            if(step.mediaType==='3d') mIcon='ph-cube';
+                            thumbHtml = `<div class="w-14 h-14 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-center shrink-0"><i class="ph-fill ${mIcon} text-2xl text-slate-400"></i></div>`;
+                        }
+                    }
+                    if (step.type === 'ar_exp' && step.triggerImageB64) {
+                        thumbHtml = `<img src="${step.triggerImageB64}" class="w-14 h-14 object-cover rounded-md border-2 border-teal-300 shrink-0" title="Imatge Trigger">`;
+                    }
+
+                    return `
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 mb-3 flex gap-4 items-start shadow-sm">
+                            <div class="${visuals.bgClass} ${visuals.textClass} p-3 rounded-lg shrink-0"><i class="${visuals.iconClass} text-xl"></i></div>
+                            <div class="flex-grow">
+                                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                    <span class="text-[11px] font-bold text-slate-600 uppercase flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded">
+                                        <i class="${visuals.iconClass}"></i> ${visuals.label}
+                                    </span>
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase">Pas ${index + 1}</span>
+                                    ${step.hasGeo ? `<span class="bg-red-100 text-red-600 text-[9px] px-1.5 py-0.5 rounded font-bold"><i class="ph-bold ph-map-pin"></i> GEOBLOCADA</span>` : ''}
+                                </div>
+                                <div class="flex items-center gap-3 mt-2">
+                                    ${thumbHtml}
+                                    <p class="font-bold text-slate-800 line-clamp-2">${step.title || step.question || step.instruction || step.locationHint || 'Sense contingut principal'}</p>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-1 items-center shrink-0">
+                                <button onclick="previewFromStep(${index})" class="text-emerald-500 hover:bg-emerald-50 p-1 rounded transition" title="Provar des d'aquí"><i class="ph-bold ph-play"></i></button>
+                                <button onclick="openModal('${step.type}', ${index})" class="text-blue-500 hover:bg-blue-50 p-1 rounded transition" title="Editar"><i class="ph-bold ph-pencil-simple"></i></button>
+                                <button onclick="moveStep(${index}, -1)" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded transition" ${index === 0 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''} title="Pujar"><i class="ph-bold ph-caret-up"></i></button>
+                                <button onclick="moveStep(${index}, 1)" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded transition" ${index === state.draftTour.steps.length - 1 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''} title="Baixar"><i class="ph-bold ph-caret-down"></i></button>
+                                <button onclick="removeStep(${index})" class="text-red-300 hover:text-red-500 hover:bg-red-50 p-1 rounded transition" title="Eliminar"><i class="ph-bold ph-trash"></i></button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            return `
+                <div class="max-w-2xl mx-auto w-full">
+                    <div class="mb-6 flex justify-between items-center">
+                        <h2 class="text-2xl font-bold text-slate-800">Editor de Ruta</h2>
+                        <button onclick="openModal('save_tour')" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition">Desar Ruta</button>
+                    </div>
+                    <div class="bg-slate-100 p-6 rounded-2xl border border-slate-200 mb-6">
+                        <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="ph-fill ph-map-pin-line text-emerald-600"></i> Estructura</h3>
+                        <div class="mb-6">${stepsHtml}</div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 pt-4 border-t border-slate-200">
+                            <button onclick="openModal('stage')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-slate-50 transition text-xs font-medium"><i class="ph ph-flag text-2xl mb-1 text-slate-500"></i> Etapa</button>
+                            <button onclick="openModal('info')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-blue-50 transition text-xs font-medium"><i class="ph ph-info text-2xl mb-1 text-blue-500"></i> Info</button>
+                            <button onclick="openModal('quiz')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-purple-50 transition text-xs font-medium"><i class="ph ph-list-checks text-2xl mb-1 text-purple-500"></i> Test</button>
+                            <button onclick="openModal('question')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-indigo-50 transition text-xs font-medium"><i class="ph ph-question text-2xl mb-1 text-indigo-500"></i> Pregunta</button>
+                            <button onclick="openModal('mission')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-orange-50 transition text-xs font-medium"><i class="ph ph-warning-circle text-2xl mb-1 text-orange-500"></i> Missió</button>
+                            <button onclick="openModal('find_spot')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-red-50 transition text-xs font-medium"><i class="ph ph-map-pin text-2xl mb-1 text-red-500"></i> Lloc GPS</button>
+                            <button onclick="openModal('ar_exp')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-teal-50 transition text-xs font-medium"><i class="ph ph-cube text-2xl mb-1 text-teal-500"></i> AR</button>
+                            <button onclick="openModal('survey')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-pink-50 transition text-xs font-medium"><i class="ph ph-chart-pie-slice text-2xl mb-1 text-pink-500"></i> Enquesta</button>
+                            <button onclick="openModal('scan_code')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-emerald-50 transition text-xs font-medium"><i class="ph ph-qr-code text-2xl mb-1 text-emerald-500"></i> Codi</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Filer Reader handle for Base64 image
+        function handleTriggerUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let w = img.width, h = img.height;
+                    if (w > 600) { h = Math.round(h * 600 / w); w = 600; }
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    document.getElementById('modalInputTriggerB64').value = canvas.toDataURL('image/jpeg', 0.8);
+                    
+                    const tCanvas = document.createElement('canvas');
+                    tCanvas.width = 16; tCanvas.height = 16;
+                    tCanvas.getContext('2d').drawImage(img, 0, 0, 16, 16);
+                    document.getElementById('modalInputTriggerTemplate').value = tCanvas.toDataURL('image/jpeg', 0.8);
+                    
+                    const preview = document.getElementById('triggerPreview');
+                    preview.src = canvas.toDataURL('image/jpeg', 0.8);
+                    preview.style.display = 'block';
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function renderDynamicModal() {
+            const type = state.modalState.type;
+            const editIndex = state.modalState.editIndex;
+            const editData = editIndex !== null ? state.draftTour.steps[editIndex] : {};
+            const visuals = getVisualsForStepType(type);
+            
+            let formHtml = '';
+            let footerHtml = '';
+            
+            const geoPanel = (type === 'save_tour' || type === 'find_spot') ? '' : `
+                <div class="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div class="flex items-center justify-between mb-4">
+                        <label class="text-sm font-bold text-slate-700 flex items-center gap-2"><i class="ph-bold ph-crosshair"></i> Restricció per Geoposició</label>
+                        <input type="checkbox" id="modalHasGeo" ${editData.hasGeo ? 'checked' : ''} onchange="toggleGeoPanel(this.checked)" class="w-5 h-5 accent-emerald-600">
+                    </div>
+                    <div id="geoControlPanel" style="display: ${editData.hasGeo ? 'block' : 'none'}">
+                        <div id="creatorMap" class="w-full h-48 bg-slate-200 rounded-xl mb-4 z-0"></div>
+                        <div class="flex items-center gap-4">
+                            <div class="flex-grow">
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase">Radi de validació (Metres)</label>
+                                <input type="number" id="modalRadius" value="${editData.targetRadius || 30}" class="w-full p-2 bg-white border border-slate-300 rounded-lg text-sm" onchange="updateMapCircle(this.value)">
+                            </div>
+                            <input type="hidden" id="modalInputLat" value="${editData.targetLat || ''}">
+                            <input type="hidden" id="modalInputLng" value="${editData.targetLng || ''}">
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const mediaHtml = `
+                <div class="mb-4"><label class="block text-sm font-bold text-slate-700 mb-1">Recurs Multimèdia</label>
+                <select id="modalMediaSelect" class="w-full p-3 bg-slate-50 border rounded-lg mb-2" onchange="document.getElementById('modalMediaUrlWrap').style.display = this.value === 'none' ? 'none' : 'block'">
+                    <option value="none" ${(!editData.mediaType || editData.mediaType==='none')?'selected':''}>Cap</option>
+                    <option value="image" ${editData.mediaType==='image'?'selected':''}>Imatge</option>
+                    <option value="video" ${editData.mediaType==='video'?'selected':''}>Vídeo</option>
+                    <option value="audio" ${editData.mediaType==='audio'?'selected':''}>Àudio</option>
+                    <option value="3d" ${editData.mediaType==='3d'?'selected':''}>Model 3D</option>
+                </select>
+                <div id="modalMediaUrlWrap" style="display: ${(!editData.mediaType || editData.mediaType==='none')?'none':'block'}">
+                    <input type="text" id="modalMediaUrl" value="${editData.mediaUrl||''}" class="w-full p-3 border rounded-lg" placeholder="URL https://...">
+                </div></div>
+            `;
+
+            if (type === 'save_tour') {
+                formHtml = `
+                    <div class="mb-5">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Títol de l'experiència</label>
+                        <input type="text" id="modalTourTitle" value="${state.draftTour.title}" class="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none transition" placeholder="Ex: Descobrint els racons verds">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Descripció o sinopsi</label>
+                        <textarea id="modalTourDesc" rows="3" class="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none transition" placeholder="Expliqueu breument de què tracta aquesta aventura...">${state.draftTour.description}</textarea>
+                    </div>
+                    <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl mt-6">
+                        <p class="text-sm text-blue-800 font-medium leading-relaxed"><i class="ph-bold ph-info"></i> Com voleu desar-ho? Podeu emmagatzemar la ruta a la llista d'aquesta sessió o descarregar-la directament al vostre dispositiu en un arxiu format JSON.</p>
+                    </div>
+                `;
+                footerHtml = `
+                    <div class="flex flex-col gap-3 mt-6 border-t border-slate-100 pt-6">
+                        <button onclick="finalizeSaveTour(false)" class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md"><i class="ph-bold ph-list-plus text-xl"></i> Desar a la llista local</button>
+                        <button onclick="finalizeSaveTour(true)" class="w-full py-3 bg-white border-2 border-blue-200 hover:border-blue-400 text-blue-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-download-simple text-xl"></i> Exportar com a fitxer JSON</button>
+                        <button onclick="closeModal()" class="w-full py-3 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-xl font-bold transition mt-2">Cancel·lar i seguir editant</button>
+                    </div>
+                `;
+            } else if (type === 'stage') {
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Títol de l'Etapa</label><input type="text" id="modalInput1" value="${editData.title||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}`;
+            } else if (type === 'info') {
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Text Informatiu</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.content||''}</textarea></div>${mediaHtml}`;
+            } else if (type === 'quiz') {
+                state.modalState.tempQuizOptions = editData.options || ['', ''];
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Pregunta Test</label><input type="text" id="modalInput1" value="${editData.question||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}
+                <div class="mb-4"><label class="block font-bold">Punts (1r intent / Següents)</label><div class="flex gap-2"><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-2 border"><input type="number" id="modalScore2" value="${editData.scoreNextTries||5}" class="w-full p-2 border"></div></div>
+                <div class="mb-4"><label class="block font-bold">Respostes</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2"><input type="radio" name="correctOpt" value="${i}" ${editData.correct===i?'checked':''}> <input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-blue-500">+ Afegir opció</button></div>`;
+            } else if (type === 'question') {
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Pregunta Oberta</label><input type="text" id="modalInput1" value="${editData.question||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}
+                <div class="mb-4"><label class="block font-bold">Respostes correctes (una per línia)</label><textarea id="modalInput2" class="w-full p-3 border rounded-xl">${(editData.validAnswers||[]).join('\n')}</textarea></div>`;
+            } else if (type === 'find_spot') {
+                formHtml = `<div class="mb-4"><label class="block font-bold">Indicació del Lloc</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.locationHint||''}</textarea></div>
+                <div id="creatorMap" class="w-full h-48 bg-slate-200 rounded-xl mb-4"></div><label class="block font-bold">Radi (m)</label><input type="number" id="modalRadius" value="${editData.targetRadius||30}" class="w-full p-3 border rounded-xl" onchange="updateMapCircle(this.value)">
+                <input type="hidden" id="modalInputLat" value="${editData.targetLat||''}"><input type="hidden" id="modalInputLng" value="${editData.targetLng||''}">`;
+            } else if (type === 'mission') {
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Missió</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.instruction||''}</textarea></div>${mediaHtml}`;
+            } else if (type === 'scan_code') {
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Instruccions per trobar el codi</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.instruction||''}</textarea></div>
+                <div class="mb-4"><label class="block font-bold">Codi exacte requerit</label><input type="text" id="modalInput2" value="${editData.code||''}" class="w-full p-3 border rounded-xl"></div>`;
+            } else if (type === 'ar_exp') {
+                formHtml = `${geoPanel}
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Instruccions de la interacció AR</label>
+                    <textarea id="modalInput1" rows="2" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Enfoqueu amb la càmera la imatge d'activació...">${editData.instruction || ''}</textarea>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Imatge d'Activació (Pugeu l'arxiu per detecció Real)</label>
+                    <input type="file" id="modalInputTriggerFile" accept="image/*" onchange="handleTriggerUpload(event)" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg">
+                    <input type="hidden" id="modalInputTriggerB64" value="${editData.triggerImageB64 || ''}">
+                    <input type="hidden" id="modalInputTriggerTemplate" value="${editData.triggerTemplateB64 || ''}">
+                    <img id="triggerPreview" src="${editData.triggerImageB64 || ''}" class="h-24 mt-3 rounded-lg border-2 border-teal-200 object-cover shadow-sm" style="display: ${editData.triggerImageB64 ? 'block' : 'none'}">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Contingut AR a projectar</label>
+                    <select id="modalInputArType" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" 
+                        onchange="document.getElementById('arUrlDiv').style.display = this.value === 'text' ? 'none' : 'block'; document.getElementById('arTextDiv').style.display = this.value === 'text' ? 'block' : 'none';">
+                        <option value="3d" ${editData.arType === '3d' ? 'selected' : ''}>Model 3D (.glb o .gltf)</option>
+                        <option value="image" ${editData.arType === 'image' ? 'selected' : ''}>Imatge</option>
+                        <option value="video" ${editData.arType === 'video' ? 'selected' : ''}>Vídeo</option>
+                        <option value="audio" ${editData.arType === 'audio' ? 'selected' : ''}>Àudio</option>
+                        <option value="text" ${editData.arType === 'text' ? 'selected' : ''}>Missatge de Text</option>
+                    </select>
+                </div>
+                <div id="arUrlDiv" class="mb-2" style="display: ${editData.arType === 'text' ? 'none' : 'block'}">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">URL del Recurs (3D, Imatge, Vídeo o Àudio)</label>
+                    <input type="text" id="modalInputArUrl" value="${editData.arType !== 'text' ? (editData.arContent || '') : ''}" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="https://...">
+                </div>
+                <div id="arTextDiv" class="mb-2" style="display: ${editData.arType === 'text' ? 'block' : 'none'}">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Missatge Ocult (Text flotant)</label>
+                    <textarea id="modalInputArText" rows="2" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Escriu el text que apareixerà flotant a l'espai...">${editData.arType === 'text' ? (editData.arContent || '') : ''}</textarea>
+                </div>`;
+            } else if (type === 'survey') {
+                state.modalState.tempQuizOptions = editData.options || ['', '', '', ''];
+                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Pregunta d'Enquesta</label><input type="text" id="modalInput1" value="${editData.question||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}
+                <div class="mb-4"><label class="block font-bold">Opcions de resposta</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2"><input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-blue-500">+ Afegir opció</button></div>`;
+            }
+
+            if (!footerHtml) {
+                footerHtml = `
+                    <div class="flex gap-3 justify-end mt-8 border-t pt-4">
+                        <button onclick="closeModal()" class="px-4 py-2 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition">Cancel·lar</button>
+                        <button onclick="saveStepFromModal()" class="px-6 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition">${editIndex!==null?'Actualitzar':'Afegir'}</button>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
+                        <h3 class="text-xl font-bold mb-6 flex items-center gap-2"><i class="${visuals.iconClass} text-2xl text-slate-400"></i> ${type==='save_tour' ? 'Finalitzar' : (editIndex!==null?'Editar':'Afegir')} ${visuals.label}</h3>
+                        ${formHtml}
+                        ${footerHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderMedia(step) {
+            if (!step.mediaType || step.mediaType === 'none' || !step.mediaUrl) return '';
+            
+            const isDark = step.type === 'stage';
+            const borderColor = isDark ? 'border-slate-600' : 'border-slate-200';
+            const bgColor = isDark ? 'bg-slate-700' : 'bg-slate-50';
+            const textColor = isDark ? 'text-emerald-400' : 'text-slate-500';
+
+            if (step.mediaType === 'image') {
+                return `<img src="${step.mediaUrl}" class="w-full h-auto max-h-64 object-cover rounded-xl mb-6 shadow-sm border ${borderColor}" onerror="this.style.display='none'">`;
+            } else if (step.mediaType === 'video') {
+                const embedUrl = getEmbedUrl(step.mediaUrl);
+                if (embedUrl.includes('youtube') || embedUrl.includes('vimeo')) {
+                    return `<div class="video-container mb-6 shadow-sm border ${borderColor} rounded-xl overflow-hidden"><iframe src="${embedUrl}" frameborder="0" allowfullscreen></iframe></div>`;
+                } else {
+                    return `<video src="${step.mediaUrl}" controls class="w-full max-h-64 rounded-xl mb-6 bg-black shadow-sm border ${borderColor}"></video>`;
+                }
+            } else if (step.mediaType === 'audio') {
+                return `
+                    <div class="${bgColor} border ${borderColor} p-4 rounded-xl mb-6 flex flex-col items-center gap-3 w-full shadow-sm">
+                        <i class="ph-duotone ph-headphones text-4xl ${textColor}"></i>
+                        <audio src="${step.mediaUrl}" controls class="w-full outline-none"></audio>
+                    </div>
+                `;
+            } else if (step.mediaType === '3d') {
+                return `
+                    <div class="mb-6 relative group w-full shadow-sm">
+                        <model-viewer src="${step.mediaUrl}" auto-rotate camera-controls shadow-intensity="1" class="w-full h-64 ${bgColor} rounded-xl border ${borderColor}"></model-viewer>
+                        <div class="absolute top-2 right-2 bg-slate-900/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">
+                            <i class="ph ph-hand-swipe-left"></i> Interactiu
+                        </div>
+                    </div>
+                `;
+            }
+            return '';
+        }
+
+        function renderPlay() {
+            const tour = state.tours.find(t => t.id === state.playState.tourId);
+            const step = tour.steps[state.playState.currentStep];
+            const progress = (state.playState.currentStep / tour.steps.length) * 100;
+
+            let mainContent = '';
+            
+            // Lògica de Geoverificació
+            if ((step.hasGeo || step.type === 'find_spot') && !state.playState.geoVerified) {
+                mainContent = `
+                    <div class="bg-white p-8 rounded-3xl border-4 border-red-100 text-center fade-in">
+                        <div class="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 pulse-red"><i class="ph-fill ph-map-pin text-4xl"></i></div>
+                        <h2 class="text-2xl font-bold mb-4">Contingut Bloquejat</h2>
+                        <p class="text-slate-600 mb-8">Heu d'arribar a la ubicació per poder veure aquesta part de l'aventura.</p>
+                        <div id="playMap" class="w-full h-48 bg-slate-200 rounded-2xl mb-8"></div>
+                        <button onclick="verifyGeoPosition()" id="verifyBtn" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2">
+                            <i class="ph-bold ph-crosshair"></i> Validar Ubicació
+                        </button>
+                    </div>
+                `;
+            } else if (state.playState.feedbackMsg) {
+                const isSuccess = state.playState.feedbackType === 'success';
+                mainContent = `
+                    <div class="p-8 rounded-3xl border-2 ${isSuccess?'bg-emerald-50 border-emerald-200':'bg-red-50 border-red-200'} fade-in">
+                        <div class="flex items-center gap-4 mb-6">
+                            <i class="ph-fill ${isSuccess?'ph-check-circle text-emerald-500':'ph-x-circle text-red-500'} text-5xl"></i>
+                            <p class="text-xl font-bold">${state.playState.feedbackMsg}</p>
+                        </div>
+                        <div class="flex flex-col gap-3">
+                            ${isSuccess || !step.requireCorrect ? `<button onclick="nextStep()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Continuar <i class="ph-bold ph-arrow-right"></i></button>` : ''}
+                            ${!isSuccess ? `<button onclick="retryStep()" class="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold">Tornar a provar</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            } else {
+                let media = renderMedia(step);
+                if (step.type === 'stage') {
+                    mainContent = `<div class="bg-slate-800 text-white p-10 rounded-3xl text-center border-4 border-slate-700 relative overflow-hidden">
+                        <div class="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTExLjM2IDYuNjRBMCAwIDAgMCAwIDEzIDEweiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==')]"></div>
+                        ${media}<i class="ph-fill ph-flag text-5xl text-emerald-400 mb-4 z-10"></i><h2 class="text-3xl font-black uppercase z-10">${step.title}</h2></div>
+                        <button onclick="nextStep()" class="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg mt-6 shadow-lg">Començar etapa</button>`;
+                } else if (step.type === 'info') {
+                    mainContent = `<div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">${media}<p class="text-lg text-slate-700 leading-relaxed">${step.content}</p></div>
+                        <button onclick="nextStep()" class="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg mt-6">Següent</button>`;
+                } else if (step.type === 'quiz') {
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
+                        <div class="space-y-3 mt-4">${step.options.map((o,i)=>`<button onclick="answerQuiz(${i})" class="w-full p-4 text-left border-2 rounded-2xl hover:border-purple-400 transition font-medium">${o}</button>`).join('')}</div></div>`;
+                } else if (step.type === 'question') {
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
+                        <input type="text" id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="Escriu aquí...">
+                        <button onclick="verifyText('question')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Enviar</button></div>`;
+                } else if (step.type === 'mission') {
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h2 class="font-bold mb-4">Missió</h2><p class="mb-6">${step.instruction}</p>${media}
+                        <textarea id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-4" rows="4"></textarea>
+                        <button onclick="verifyText('mission')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Completar Missió</button></div>`;
+                } else if (step.type === 'ar_exp') {
+                    let mediaIcon = 'ph-cube';
+                    if(step.arType === 'video') mediaIcon = 'ph-video-camera';
+                    if(step.arType === 'audio') mediaIcon = 'ph-headphones';
+                    if(step.arType === 'image') mediaIcon = 'ph-image';
+                    if(step.arType === 'text') mediaIcon = 'ph-text-aa';
+
+                    mainContent = `
+                        <div class="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 mb-8 fade-in text-center">
+                            <div class="w-16 h-16 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <i class="ph-fill ${mediaIcon} text-3xl"></i>
+                            </div>
+                            <span class="text-xs font-bold text-teal-500 uppercase tracking-widest mb-2 block">Experiència de Realitat Augmentada</span>
+                            <p class="text-lg font-semibold text-slate-800 mb-6">${step.instruction}</p>
+                            
+                            <div class="mb-6 relative inline-block">
+                                <span class="text-xs font-bold text-slate-400 mb-2 block">Imatge de Referència que heu de trobar i enfocar</span>
+                                <img src="${step.triggerImageB64 || defaultB64}" class="max-h-48 rounded-xl border-4 border-slate-100 mx-auto shadow-sm" onerror="this.style.display='none'">
+                            </div>
+                            
+                            <button onclick="startARCamera()" class="w-full py-4 bg-teal-600 text-white rounded-2xl font-bold text-lg hover:bg-teal-700 transition shadow-md flex items-center justify-center gap-2">
+                                Obrir Càmera Escàner AR <i class="ph-bold ph-camera"></i>
+                            </button>
+                        </div>
+                    `;
+                } else if (step.type === 'scan_code') {
+                    mainContent = `
+                        <div class="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 mb-8 fade-in text-center">
+                            <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><i class="ph-fill ph-qr-code text-3xl"></i></div>
+                            <h3 class="text-xl font-bold mb-6">Codi de Validació</h3>
+                            <p class="text-slate-600 mb-6">${step.instruction}</p>
+                            <input type="text" id="playInput" class="w-full text-center text-xl font-mono uppercase tracking-widest p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="CODI...">
+                            <button onclick="verifyText('scan_code')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Validar <i class="ph-bold ph-check"></i></button>
+                        </div>`;
+                } else if (step.type === 'survey') {
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
+                        <div class="space-y-3 mt-4">${step.options.filter(opt=>opt.trim()!=='').map((o,i)=>`<button onclick="answerSurvey()" class="w-full p-4 text-left border-2 rounded-2xl hover:border-pink-400 transition font-medium">${o}</button>`).join('')}</div></div>`;
+                }
+            }
+
+            return `<div class="max-w-xl mx-auto w-full flex flex-col h-full"><div class="mb-8 pt-2"><div class="flex justify-between text-xs font-bold text-slate-400 mb-2 uppercase"><span>${tour.title}</span><span>Pas ${state.playState.currentStep + 1}/${tour.steps.length}</span></div>
+                    <div class="w-full bg-slate-200 rounded-full h-2"><div class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: ${progress}%"></div></div></div>
+                    <div class="flex-grow">${mainContent}</div><div class="mt-12 text-center"><button onclick="confirmExit()" class="text-slate-400 text-sm font-medium">Abandonar</button></div></div>`;
+        }
+
+        function renderSummary() {
+            return `<div class="flex flex-col items-center justify-center flex-grow text-center py-8 fade-in"><div class="w-24 h-24 bg-yellow-100 text-yellow-500 rounded-full flex items-center justify-center mb-6 shadow-xl"><i class="ph-fill ph-trophy text-5xl"></i></div>
+                    <h2 class="text-3xl font-extrabold text-slate-800 mb-2">Aventura Aconseguida!</h2><p class="text-slate-600 mb-8">Puntuació final: ${state.playState.score} de ${state.playState.maxScore}</p>
+                    <button onclick="navigateTo('home')" class="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold">Tornar a l'inici</button></div>`;
+        }
+
+        function navigateTo(view) { state.playState.feedbackMsg = null; state.modalState.isOpen = false; if (mapInstance) { mapInstance.remove(); mapInstance = null; } state.view = view; renderAll(); }
+
+        function getVisualsForStepType(type) {
+            const map = {
+                'stage': { label: 'Etapa', iconClass: 'ph-flag', bgClass: 'bg-slate-100', textClass: 'text-slate-600' },
+                'info': { label: 'Informació', iconClass: 'ph-info', bgClass: 'bg-blue-100', textClass: 'text-blue-600' },
+                'quiz': { label: 'Test', iconClass: 'ph-list-checks', bgClass: 'bg-purple-100', textClass: 'text-purple-600' },
+                'question': { label: 'Pregunta', iconClass: 'ph-question', bgClass: 'bg-indigo-100', textClass: 'text-indigo-600' },
+                'mission': { label: 'Missió', iconClass: 'ph-warning-circle', bgClass: 'bg-orange-100', textClass: 'text-orange-600' },
+                'find_spot': { label: 'Lloc', iconClass: 'ph-map-pin', bgClass: 'bg-red-100', textClass: 'text-red-600' },
+                'scan_code': { label: 'Codi', iconClass: 'ph-qr-code', bgClass: 'bg-emerald-100', textClass: 'text-emerald-600' },
+                'ar_exp': { label: 'AR', iconClass: 'ph-cube', bgClass: 'bg-teal-100', textClass: 'text-teal-600' },
+                'survey': { label: 'Enquesta', iconClass: 'ph-chart-pie-slice', bgClass: 'bg-pink-100', textClass: 'text-pink-600' },
+                'save_tour': { label: 'Finalitzar i Desar', iconClass: 'ph-floppy-disk', bgClass: 'bg-emerald-100', textClass: 'text-emerald-600' }
+            };
+            return map[type] || map['info'];
+        }
+
+        function initMapForCreation() {
+            const container = document.getElementById('creatorMap');
+            if (!container) return;
+            const lat = parseFloat(document.getElementById('modalInputLat').value) || 41.3851;
+            const lng = parseFloat(document.getElementById('modalInputLng').value) || 2.1734;
+            const radius = parseInt(document.getElementById('modalRadius').value) || 30;
+
+            mapInstance = L.map('creatorMap').setView([lat, lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
+            
+            mapMarker = L.marker([lat, lng]).addTo(mapInstance);
+            mapCircle = L.circle([lat, lng], { radius: radius, color: '#3b82f6', fillOpacity: 0.2 }).addTo(mapInstance);
+
+            mapInstance.on('click', e => {
+                mapMarker.setLatLng(e.latlng);
+                mapCircle.setLatLng(e.latlng);
+                document.getElementById('modalInputLat').value = e.latlng.lat;
+                document.getElementById('modalInputLng').value = e.latlng.lng;
+            });
+            setTimeout(() => mapInstance.invalidateSize(), 200);
+        }
+
+        function updateMapCircle(radius) {
+            if (mapCircle) mapCircle.setRadius(parseInt(radius) || 30);
+        }
+
+        function initMapForPlay(lat, lng, radius) {
+            const container = document.getElementById('playMap');
+            if (!container) return;
+            mapInstance = L.map('playMap', { zoomControl: false }).setView([lat, lng], 16);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
+            L.circle([lat, lng], { radius: radius, color: '#ef4444', fillOpacity: 0.3 }).addTo(mapInstance);
+            setTimeout(() => mapInstance.invalidateSize(), 200);
+        }
+
+        function toggleGeoPanel(checked) {
+            const panel = document.getElementById('geoControlPanel');
+            panel.style.display = checked ? 'block' : 'none';
+            if (checked && !mapInstance) setTimeout(initMapForCreation, 100);
+        }
+
+        function verifyGeoPosition() {
+            const btn = document.getElementById('verifyBtn');
+            btn.innerHTML = `<i class="ph ph-spinner animate-spin"></i> Verificant...`;
+            btn.disabled = true;
+
+            const tour = state.tours.find(t => t.id === state.playState.tourId);
+            const step = tour.steps[state.playState.currentStep];
+
+            if (!navigator.geolocation) {
+                showDialog("La geolocalització no és compatible amb aquest dispositiu.");
+                btn.innerHTML = `<i class="ph-bold ph-crosshair"></i> Validar Ubicació`;
+                btn.disabled = false;
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(pos => {
+                const dist = getDistanceFromLatLonInM(pos.coords.latitude, pos.coords.longitude, step.targetLat, step.targetLng);
+                const radius = step.targetRadius || 30;
+                if (dist <= radius) {
+                    state.playState.geoVerified = true;
+                    renderView();
+                } else {
+                    const remaining = Math.round(dist - radius);
+                    showDialog(`Encara sou lluny. Us falten uns ${remaining > 0 ? remaining : Math.round(dist)} metres per arribar a la zona de validació.`);
+                    btn.innerHTML = `<i class="ph-bold ph-crosshair"></i> Validar Ubicació`;
+                    btn.disabled = false;
+                }
+            }, err => {
+                showDialog("No s'ha pogut obtenir la vostra ubicació. Reviseu els permisos.");
+                btn.innerHTML = `<i class="ph-bold ph-crosshair"></i> Validar Ubicació`;
+                btn.disabled = false;
+            }, { enableHighAccuracy: true });
+        }
+
+        function getDistanceFromLatLonInM(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const dLat = (lat2-lat1)*Math.PI/180;
+            const dLon = (lon2-lon1)*Math.PI/180;
+            const a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+        }
+
+        function openModal(type, editIndex = null) {
+            state.modalState = { isOpen: true, type, editIndex, tempQuizOptions: [] };
+            renderModal();
+            setTimeout(() => { if (document.getElementById('modalTourTitle')) document.getElementById('modalTourTitle').focus(); }, 100);
+        }
+        function closeModal() { if (mapInstance) { mapInstance.remove(); mapInstance = null; } state.modalState.isOpen = false; renderModal(); }
+
+        function saveStepFromModal() {
+            const type = state.modalState.type;
+            const editIndex = state.modalState.editIndex;
+            let stepData = { 
+                type, 
+                mediaType: document.getElementById('modalMediaSelect')?.value || 'none',
+                mediaUrl: document.getElementById('modalMediaUrl')?.value.trim() || '',
+                hasGeo: document.getElementById('modalHasGeo')?.checked || (type === 'find_spot'),
+                targetLat: parseFloat(document.getElementById('modalInputLat')?.value),
+                targetLng: parseFloat(document.getElementById('modalInputLng')?.value),
+                targetRadius: parseInt(document.getElementById('modalRadius')?.value) || 30
+            };
+
+            const v1 = document.getElementById('modalInput1')?.value.trim();
+            if (type === 'stage') stepData.title = v1;
+            else if (type === 'info') stepData.content = v1;
+            else if (type === 'quiz') {
+                stepData.question = v1;
+                stepData.options = state.modalState.tempQuizOptions.map((o,i)=>document.getElementById('opt'+i).value.trim());
+                stepData.correct = parseInt(document.querySelector('input[name="correctOpt"]:checked')?.value || 0);
+                stepData.scoreFirstTry = parseInt(document.getElementById('modalScore1').value);
+                stepData.scoreNextTries = parseInt(document.getElementById('modalScore2').value);
+            } else if (type === 'question') {
+                stepData.question = v1;
+                stepData.validAnswers = document.getElementById('modalInput2').value.split('\n').map(a=>a.trim().toLowerCase());
+            } else if (type === 'find_spot') {
+                stepData.locationHint = v1;
+            } else if (type === 'mission') {
+                stepData.instruction = v1;
+            } else if (type === 'scan_code') {
+                stepData.instruction = v1;
+                stepData.code = document.getElementById('modalInput2')?.value.trim() || '';
+            } else if (type === 'ar_exp') {
+                const arType = document.getElementById('modalInputArType').value;
+                const arUrl = document.getElementById('modalInputArUrl').value.trim();
+                const arText = document.getElementById('modalInputArText').value.trim();
+                
+                const triggerImageB64 = document.getElementById('modalInputTriggerB64').value;
+                const triggerTemplateB64 = document.getElementById('modalInputTriggerTemplate').value;
+
+                if(!v1) return showDialog("Falta escriure la instrucció de l'experiència de Realitat Augmentada.");
+                if(!triggerImageB64) return showDialog("Heu d'afegir una Imatge d'Activació (Trigger) pujant un fitxer.");
+                if(arType !== 'text' && !arUrl) return showDialog("Falta afegir la URL del recurs multimèdia escollit.");
+                if(arType === 'text' && !arText) return showDialog("Falta escriure el text del missatge ocult flotant.");
+
+                stepData.instruction = v1;
+                stepData.triggerImageB64 = triggerImageB64;
+                stepData.triggerTemplateB64 = triggerTemplateB64;
+                stepData.arType = arType;
+                stepData.arContent = arType === 'text' ? arText : arUrl;
+            } else if (type === 'survey') {
+                stepData.question = v1;
+                stepData.options = state.modalState.tempQuizOptions.map((o,i)=>document.getElementById('opt'+i)?.value.trim() || '');
+            }
+
+            if (editIndex !== null) {
+                if (type === 'ar_exp' && !stepData.triggerImageB64) {
+                    stepData.triggerImageB64 = state.draftTour.steps[editIndex].triggerImageB64;
+                    stepData.triggerTemplateB64 = state.draftTour.steps[editIndex].triggerTemplateB64;
+                }
+                state.draftTour.steps[editIndex] = stepData;
+            }
+            else state.draftTour.steps.push(stepData);
+            
+            closeModal();
+            renderView();
+        }
+
+        function removeStep(i) { state.draftTour.steps.splice(i, 1); renderView(); }
+        function moveStep(i, d) { const steps = state.draftTour.steps; const j = i + d; if (j>=0 && j<steps.length) { [steps[i], steps[j]] = [steps[j], steps[i]]; renderView(); } }
+
+        function addQuizOption() { state.modalState.tempQuizOptions.push(''); renderModal(); }
+        function removeQuizOption(i) { state.modalState.tempQuizOptions.splice(i, 1); renderModal(); }
+
+        function startCreation() { state.draftTour = { id: null, title: '', description: '', steps: [] }; navigateTo('create'); }
+        function editTour(id) { state.draftTour = JSON.parse(JSON.stringify(state.tours.find(t=>t.id===id))); navigateTo('create'); }
+        
+        // --- FUNCIÓ FINALITZAR DESAR CORREGIDA ---
+        function finalizeSaveTour(downloadAsJson = false) {
+            const titleEl = document.getElementById('modalTourTitle');
+            const descEl = document.getElementById('modalTourDesc');
+            
+            if (titleEl) state.draftTour.title = titleEl.value.trim();
+            if (descEl) state.draftTour.description = descEl.value.trim();
+            
+            if (!state.draftTour.title) {
+                return showDialog("Cal afegir un títol a la ruta abans de desar-la.");
+            }
+            if (state.draftTour.steps.length === 0) {
+                return showDialog("Cal afegir almenys un contingut o etapa a la ruta.");
+            }
+            
+            let savedTour;
+            if (state.draftTour.id && !state.draftTour.id.startsWith('temp-')) {
+                const index = state.tours.findIndex(t => t.id === state.draftTour.id);
+                if (index !== -1) {
+                    state.tours[index] = { ...state.draftTour };
+                    savedTour = state.tours[index];
+                } else {
+                    savedTour = { ...state.draftTour };
+                    state.tours.push(savedTour);
+                }
+            } else { 
+                state.draftTour.id = 'r-' + Date.now(); 
+                savedTour = { ...state.draftTour };
+                state.tours.push(savedTour); 
+            }
+
+            if (downloadAsJson && savedTour) {
+                triggerDownloadJSON(savedTour);
+            }
+
+            closeModal();
+            navigateTo('list');
+        }
+
+        function startTour(id) {
+            const tour = state.tours.find(t=>t.id===id);
+            state.playState = { tourId: id, currentStep: 0, score: 0, attempts: {}, feedbackMsg: null, geoVerified: false, maxScore: tour.steps.length*10 };
+            navigateTo('play');
+        }
+
+        function previewFromStep(i) {
+            if (!state.draftTour.title) state.draftTour.title = "Previsualització";
+            const id = 'temp-preview';
+            const existing = state.tours.findIndex(t=>t.id===id);
+            if (existing!==-1) state.tours[existing] = { ...state.draftTour, id };
+            else state.tours.push({ ...state.draftTour, id });
+            startTour(id);
+            state.playState.currentStep = i;
+            renderView();
+        }
+
+        function answerQuiz(i) {
+            const step = state.tours.find(t=>t.id===state.playState.tourId).steps[state.playState.currentStep];
+            if (i === step.correct) { state.playState.score += 10; state.playState.feedbackMsg = "Correcte!"; state.playState.feedbackType = 'success'; }
+            else { state.playState.feedbackMsg = "Incorrecte."; state.playState.feedbackType = 'error'; }
+            renderView();
+        }
+
+        function verifyText(type) {
+            const input = document.getElementById('playInput').value.trim().toLowerCase();
+            const step = state.tours.find(t=>t.id===state.playState.tourId).steps[state.playState.currentStep];
+            if (type === 'question') {
+                if (step.validAnswers.includes(input)) { state.playState.score += 10; state.playState.feedbackMsg = "Molt bé!"; state.playState.feedbackType = 'success'; }
+                else { state.playState.feedbackMsg = "No és correcte."; state.playState.feedbackType = 'error'; }
+            } else { state.playState.score += 5; state.playState.feedbackMsg = "Missió completada."; state.playState.feedbackType = 'success'; }
+            renderView();
+        }
+
+        function nextStep() {
+            state.playState.feedbackMsg = null;
+            state.playState.geoVerified = false;
+            if (state.playState.currentStep < state.tours.find(t=>t.id===state.playState.tourId).steps.length - 1) {
+                state.playState.currentStep++;
+                renderView();
+            } else navigateTo('summary');
+        }
+
+        function retryStep() { state.playState.feedbackMsg = null; renderView(); }
+        function confirmExit() { showDialog("Vols sortir?", "confirm", () => navigateTo('list')); }
+        function exportSingleTourAsJSON(id) { const tour = state.tours.find(t=>t.id===id); const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify([tour])); const dl = document.createElement('a'); dl.setAttribute("href", data); dl.setAttribute("download", "ruta.json"); dl.click(); }
+        function importTours(e) { const f = e.target.files[0]; const reader = new FileReader(); reader.onload = ev => { try { JSON.parse(ev.target.result).forEach(t => state.tours.push(t)); navigateTo('list'); } catch(err) { showDialog("Error JSON"); } }; reader.readAsText(f); }
+
+        function getEmbedUrl(u) { if (!u) return ''; if (u.includes('youtube.com/watch?v=')) return `https://www.youtube.com/embed/${new URL(u).searchParams.get('v')}`; if (u.includes('youtu.be/')) return `https://www.youtube.com/embed/${u.split('youtu.be/')[1]}`; return u; }
+
+        // --- CÀMERA AR I DETECCIÓ VISUAL ---
+        function startARCamera() {
+            const container = document.getElementById('ar-fullscreen-container');
+            const videoElement = document.getElementById('ar-video-feed');
+            const contentOverlay = document.getElementById('ar-content-overlay');
+            const scanUI = document.getElementById('ar-scan-ui');
+            
+            const step = state.tours.find(t => t.id === state.playState.tourId).steps[state.playState.currentStep];
+
+            document.getElementById('ar-ghost-image').src = step.triggerImageB64 || defaultB64;
+            document.getElementById('ar-scan-line').classList.remove('hidden');
+            document.getElementById('ar-instruction-text').innerText = "Cercant la imatge... Mantingueu el dispositiu estable apuntant al patró.";
+            
+            container.classList.remove('hidden');
+            contentOverlay.innerHTML = ''; 
+            contentOverlay.classList.add('hidden');
+            scanUI.classList.remove('hidden');
+
+            arScanActive = true;
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                .then(stream => {
+                    currentVideoStream = stream;
+                    videoElement.srcObject = stream;
+                    videoElement.onloadedmetadata = () => {
+                        videoElement.play();
+                        requestAnimationFrame(() => detectTriggerImage(step.triggerTemplateB64 || defaultB64));
+                    };
+                })
+                .catch(err => {
+                    arScanActive = false;
+                    showDialog("No s'ha pogut accedir a la càmera. Assegureu-vos de donar permisos.");
+                    container.classList.add('hidden');
+                });
+        }
+
+        function detectTriggerImage(templateB64) {
+            if (!arScanActive) return;
+            
+            const video = document.getElementById('ar-video-feed');
+            
+            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                if (!window.arTemplateImg) {
+                    window.arTemplateImg = new Image();
+                    window.arTemplateImg.src = templateB64;
+                    return requestAnimationFrame(() => detectTriggerImage(templateB64));
+                }
+                if (!window.arTemplateData && window.arTemplateImg.complete) {
+                    const c = document.createElement('canvas');
+                    c.width = 16; c.height = 16;
+                    c.getContext('2d').drawImage(window.arTemplateImg, 0, 0, 16, 16);
+                    window.arTemplateData = c.getContext('2d').getImageData(0,0,16,16).data;
+                }
+
+                if (window.arTemplateData) {
+                    const c = document.createElement('canvas');
+                    c.width = 16; c.height = 16;
+                    const ctx = c.getContext('2d');
+                    
+                    const size = Math.min(video.videoWidth, video.videoHeight);
+                    const sx = (video.videoWidth - size) / 2;
+                    const sy = (video.videoHeight - size) / 2;
+                    
+                    ctx.drawImage(video, sx, sy, size, size, 0, 0, 16, 16);
+                    const videoData = ctx.getImageData(0,0,16,16).data;
+
+                    let diff = 0;
+                    for(let i=0; i<videoData.length; i+=4) {
+                        let g1 = (videoData[i] + videoData[i+1] + videoData[i+2]) / 3;
+                        let g2 = (window.arTemplateData[i] + window.arTemplateData[i+1] + window.arTemplateData[i+2]) / 3;
+                        diff += Math.abs(g1 - g2);
+                    }
+                    const avgDiff = diff / 256; 
+
+                    // MSE Detection Threshold: if avg pixel variation is < 50, trigger.
+                    if (avgDiff < 50) { 
+                        arScanActive = false;
+                        window.arTemplateData = null;
+                        window.arTemplateImg = null;
+                        return revealARContent();
+                    }
+                }
+            }
+            
+            requestAnimationFrame(() => detectTriggerImage(templateB64));
+        }
+
+        function revealARContent() {
+            const step = state.tours.find(t => t.id === state.playState.tourId).steps[state.playState.currentStep];
+            document.getElementById('ar-scan-ui').classList.add('hidden');
+            
+            const contentOverlay = document.getElementById('ar-content-overlay');
+            contentOverlay.classList.remove('hidden');
+
+            let html = '';
+            if (step.arType === '3d') {
+                html = `<model-viewer src="${step.arContent}" auto-rotate camera-controls style="width:100%; height:60vh; background:transparent;" shadow-intensity="1"></model-viewer>`;
+            } else if (step.arType === 'image') {
+                html = `<img src="${step.arContent}" class="w-11/12 max-h-[70vh] object-contain rounded-2xl shadow-2xl border-4 border-white/80 fade-in">`;
+            } else if (step.arType === 'video') {
+                html = `<video src="${step.arContent}" controls autoplay class="w-11/12 rounded-2xl shadow-2xl border-4 border-white/80 fade-in"></video>`;
+            } else if (step.arType === 'audio') {
+                html = `
+                    <div class="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl flex flex-col items-center border border-white/50 fade-in w-10/12">
+                        <div class="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                            <i class="ph-fill ph-speaker-hifi text-5xl"></i>
+                        </div>
+                        <audio src="${step.arContent}" controls autoplay class="w-full"></audio>
+                    </div>
+                `;
+            } else if (step.arType === 'text') {
+                html = `
+                    <div class="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl w-10/12 max-h-[70vh] overflow-y-auto border border-white/50 fade-in text-center">
+                        <i class="ph-duotone ph-sparkle text-4xl text-amber-500 mb-4 inline-block"></i>
+                        <p class="text-xl font-bold text-slate-800 leading-relaxed">${step.arContent.replace(/\n/g, '<br>')}</p>
+                    </div>
+                `;
+            }
+
+            contentOverlay.innerHTML = `
+                <div class="absolute inset-0 flex items-center justify-center p-4">
+                    ${html}
+                </div>
+                <button onclick="closeARCamera(false)" class="absolute bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-emerald-600 text-white font-bold rounded-full shadow-2xl border border-emerald-500 flex items-center gap-2 hover:bg-emerald-500 transition hover:scale-105">
+                    Continuar endavant <i class="ph-bold ph-arrow-right"></i>
+                </button>
+            `;
+        }
+
+        function closeARCamera(skipNextStep = false) {
+            arScanActive = false;
+            if (currentVideoStream) {
+                currentVideoStream.getTracks().forEach(track => track.stop());
+                currentVideoStream = null;
+            }
+            document.getElementById('ar-fullscreen-container').classList.add('hidden');
+            document.getElementById('ar-content-overlay').innerHTML = ''; 
+            
+            if (!skipNextStep && state.view === 'play') {
+                nextStep(); 
+            }
+        }
+    </script>
+</body>
+</html>
