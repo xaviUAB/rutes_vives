@@ -10,6 +10,34 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+    <!-- Simulació de l'entorn A-Frame per poder carregar el compilador de MindAR sense alterar la interfície gràfica -->
+    <script>
+        window.AFRAME = {
+            registerComponent: function() {},
+            registerSystem: function() {},
+            registerPrimitive: function() {},
+            registerGeometry: function() {},
+            registerShader: function() {},
+            components: {},
+            systems: {}
+        };
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            const msg = args.join(' ');
+            if (msg.includes('is not valid JSON') || msg.includes('Unexpected token') || msg.includes('404')) return; 
+            originalConsoleError.apply(console, args);
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+            if (event.reason && (event.reason.toString().includes('JSON') || event.reason.toString().includes('Unexpected token'))) {
+                event.preventDefault(); 
+            }
+        });
+    </script>
+    <script type="module">
+        import { Compiler } from 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js';
+        window.MindARCompiler = Compiler;
+    </script>
+
     <style>
         body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #0f172a; }
         .fade-in { animation: fadeIn 0.4s ease-in-out; }
@@ -63,33 +91,147 @@
     </div>
 
     <script>
+        // Substituïu aquesta URL per la del vostre Google Apps Script que actua de catàleg
+        const GLOBAL_CATALOG_URL = "https://script.google.com/macros/s/AKfycbw7_V0bW_fqNXoFf9hPpwBDKEXZMT735ulmCVp9HegUZ69W5_7FvgjQ8FtJG3g6izc/exec";
+
+        // Transparent 1x1 pixel base64 for default placeholder
         const defaultB64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+        function getEmbedUrl(u) { if (!u) return ''; if (u.includes('youtube.com/watch?v=')) return `https://www.youtube.com/embed/${new URL(u).searchParams.get('v')}`; if (u.includes('youtu.be/')) return `https://www.youtube.com/embed/${u.split('youtu.be/')[1]}`; return u; }
+
+        function renderMedia(step) {
+            if (!step.mediaType || step.mediaType === 'none' || !step.mediaUrl) return '';
+            
+            const isDark = step.type === 'stage';
+            const borderColor = isDark ? 'border-slate-600' : 'border-slate-200';
+            const bgColor = isDark ? 'bg-slate-700' : 'bg-slate-50';
+            const textColor = isDark ? 'text-emerald-400' : 'text-slate-500';
+
+            if (step.mediaType === 'image') {
+                return `<img src="${step.mediaUrl}" class="w-full h-auto max-h-64 object-cover rounded-xl mb-6 shadow-sm border ${borderColor}" onerror="this.style.display='none'">`;
+            } else if (step.mediaType === 'video') {
+                const embedUrl = getEmbedUrl(step.mediaUrl);
+                if (embedUrl.includes('youtube') || embedUrl.includes('vimeo')) {
+                    return `<div class="video-container mb-6 shadow-sm border ${borderColor} rounded-xl overflow-hidden"><iframe src="${embedUrl}" frameborder="0" allowfullscreen></iframe></div>`;
+                } else {
+                    return `<video src="${step.mediaUrl}" controls class="w-full max-h-64 rounded-xl mb-6 bg-black shadow-sm border ${borderColor}"></video>`;
+                }
+            } else if (step.mediaType === 'audio') {
+                return `
+                    <div class="${bgColor} border ${borderColor} p-4 rounded-xl mb-6 flex flex-col items-center gap-3 w-full shadow-sm">
+                        <i class="ph-duotone ph-headphones text-4xl ${textColor}"></i>
+                        <audio src="${step.mediaUrl}" controls class="w-full outline-none"></audio>
+                    </div>
+                `;
+            } else if (step.mediaType === '3d') {
+                return `
+                    <div class="mb-6 relative group w-full shadow-sm">
+                        <model-viewer src="${step.mediaUrl}" auto-rotate camera-controls shadow-intensity="1" class="w-full h-64 ${bgColor} rounded-xl border ${borderColor}"></model-viewer>
+                        <div class="absolute top-2 right-2 bg-slate-900/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">
+                            <i class="ph ph-hand-swipe-left"></i> Interactiu
+                        </div>
+                    </div>
+                `;
+            }
+            return '';
+        }
+
+        window.draggedSortIndex = null;
+        window.dragSortStart = function(e, idx) { window.draggedSortIndex = idx; e.dataTransfer.effectAllowed = 'move'; };
+        window.dragSortOver = function(e) { e.preventDefault(); };
+        window.dragSortDrop = function(e, targetIdx) {
+            e.preventDefault();
+            if (window.draggedSortIndex === null || window.draggedSortIndex === targetIdx) return;
+            const arr = state.view === 'create' ? state.previewSortOrder : state.playState.currentSortOrder;
+            const item = arr.splice(window.draggedSortIndex, 1)[0];
+            arr.splice(targetIdx, 0, item);
+            window.draggedSortIndex = null;
+            renderAll();
+        };
 
         const state = {
             view: 'home', 
             previewStepIndex: 0,
-            tours: [
-                {
-                    id: 'demo-1',
-                    title: 'Aventura Completa: Explorant l\'Entorn',
-                    description: 'Ruta d\'exemple que conté totes les funcionalitats.',
-                    trackingUrl: '',
-                    steps: [
-                        { type: 'stage', title: 'Benvinguda Multimèdia' },
-                        { type: 'info', content: 'Escolteu aquesta breu introducció abans de començar.', mediaType: 'audio', mediaUrl: 'https://actions.google.com/sounds/v1/nature/bird_song.ogg' },
-                        { type: 'sort', instruction: 'Ordeneu els següents elements del més antic al més modern:', correctOrder: ['Primer element', 'Segon element', 'Tercer element'] },
-                        { type: 'find_spot', locationHint: 'Aneu fins a la zona marcada al mapa per avançar.', targetLat: 41.3851, targetLng: 2.1734 },
-                        { type: 'quiz', question: 'Què destaqueu de l\'entorn?', options: ['Arquitectura', 'Natura', 'Silenci', 'Urbanisme'], correct: 0 },
-                        { type: 'question', question: 'Quin és el color del cel?', validAnswers: ['blau', 'celeste'] },
-                        { type: 'ar_exp', instruction: 'Enfoqueu amb la càmera per descobrir el model 3D.', triggerImageB64: defaultB64, triggerTemplateB64: defaultB64, arType: '3d', arContent: 'https://modelviewer.dev/shared-assets/models/Astronaut.glb' },
-                        { type: 'mission', instruction: 'Quin ús responsable faríeu d\'aquest espai? Escriviu-ho.' }
-                    ]
-                }
-            ],
-            draftTour: { id: null, title: '', description: '', steps: [], trackingUrl: '' },
+            tours: [],
+            draftTour: { id: null, title: '', description: '', steps: [], trackingUrl: '', accessType: 'free' },
             playState: { tourId: null, currentStep: 0, score: 0, maxScore: 0, attempts: {}, feedbackMsg: null, feedbackType: null, geoVerified: false, stepStartTime: null, interactionLogs: [], currentSortOrder: null },
             modalState: { isOpen: false, type: null, editIndex: null, tempQuizOptions: [], tempQuizCorrect: 0 },
-            dialogState: { isOpen: false, message: '', type: 'alert', onConfirm: null }
+            dialogState: { isOpen: false, message: '', type: 'alert', onConfirm: null, placeholder: '' }
+        };
+
+        function loadToursFromCatalog() {
+            if (!GLOBAL_CATALOG_URL || window.isAutonomous) return;
+            
+            fetch(GLOBAL_CATALOG_URL + "?action=getCatalog")
+                .then(res => res.json())
+                .then(data => {
+                    if (data.urls && data.urls.length > 0) {
+                        let carregades = 0;
+                        data.urls.forEach(url => {
+                            fetch(url)
+                                .then(r => r.json())
+                                .then(tourData => {
+                                    const toursToImport = Array.isArray(tourData) ? tourData : [tourData];
+                                    toursToImport.forEach(impTour => {
+                                        if(impTour.id && impTour.title && Array.isArray(impTour.steps)) {
+                                            const idx = state.tours.findIndex(t => t.id === impTour.id);
+                                            if (idx >= 0) state.tours[idx] = impTour;
+                                            else state.tours.push(impTour);
+                                            carregades++;
+                                        }
+                                    });
+                                    if(carregades > 0) renderView();
+                                })
+                                .catch(e => console.warn("No s'ha pogut carregar la ruta des de la URL: " + url));
+                        });
+                    }
+                })
+                .catch(e => console.warn("Error en connectar amb el catàleg de rutes de Google Sheets."));
+        }
+
+        window.importFolder = function(e) {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            
+            let loadedCount = 0;
+            let processedFiles = 0;
+            const totalFiles = files.length;
+            
+            Array.from(files).forEach(file => {
+                if (file.name.toLowerCase().startsWith('rutaviva_') && file.name.toLowerCase().endsWith('.json')) {
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                        try {
+                            const imported = JSON.parse(ev.target.result);
+                            if (Array.isArray(imported)) {
+                                imported.forEach(impTour => {
+                                    if(impTour.id && impTour.title && Array.isArray(impTour.steps)) {
+                                        const idx = state.tours.findIndex(t => t.id === impTour.id);
+                                        if (idx >= 0) state.tours[idx] = impTour;
+                                        else state.tours.push(impTour);
+                                        loadedCount++;
+                                    }
+                                });
+                            }
+                        } catch(err) {
+                            console.error("Error processant l'arxiu: " + file.name, err);
+                        }
+                        checkComplete();
+                    };
+                    reader.readAsText(file);
+                } else {
+                    checkComplete();
+                }
+                
+                function checkComplete() {
+                    processedFiles++;
+                    if (processedFiles === totalFiles) {
+                        showDialog(`S'ha completat la cerca a la carpeta. S'han carregat ${loadedCount} ruta/es correctament.`);
+                        renderView();
+                    }
+                }
+            });
+            e.target.value = '';
         };
 
         let mapInstance = null;
@@ -98,7 +240,10 @@
         let currentVideoStream = null; 
         let arScanActive = false;
 
-        window.onload = () => renderAll();
+        window.onload = () => {
+            renderAll();
+            loadToursFromCatalog();
+        };
 
         function renderAll() { renderView(); renderModal(); renderDialogUI(); }
 
@@ -147,7 +292,8 @@
             const container = document.getElementById('modal-container');
             if (state.view === 'create' && state.modalState.isOpen) {
                 container.innerHTML = renderDynamicModal();
-                if (state.modalState.type === 'find_spot' || (document.getElementById('geoControlPanel') && document.getElementById('geoControlPanel').style.display !== 'none')) {
+                const geoPanelEl = document.getElementById('geoControlPanel');
+                if (state.modalState.type === 'find_spot' || (geoPanelEl && geoPanelEl.style.display !== 'none')) {
                     setTimeout(initMapForCreation, 200);
                 }
             } else { container.innerHTML = ''; }
@@ -157,16 +303,20 @@
             const container = document.getElementById('dialog-container');
             if (state.dialogState.isOpen) {
                 const isConfirm = state.dialogState.type === 'confirm';
+                const isPrompt = state.dialogState.type === 'prompt';
+                const showCancel = isConfirm || isPrompt;
+                
                 container.innerHTML = `
                     <div class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
                         <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center">
-                            <div class="w-20 h-20 ${isConfirm ? 'bg-orange-100 text-orange-500' : 'bg-blue-100 text-blue-500'} rounded-full flex items-center justify-center mx-auto mb-6">
-                                <i class="ph-fill ${isConfirm ? 'ph-warning-circle' : 'ph-info'} text-4xl"></i>
+                            <div class="w-20 h-20 ${showCancel ? 'bg-orange-100 text-orange-500' : 'bg-blue-100 text-blue-500'} rounded-full flex items-center justify-center mx-auto mb-6">
+                                <i class="ph-fill ${isConfirm ? 'ph-warning-circle' : (isPrompt ? 'ph-lock-key' : 'ph-info')} text-4xl"></i>
                             </div>
                             <p class="text-xl font-bold text-slate-800 mb-6">${state.dialogState.message}</p>
-                            <div class="flex gap-3 justify-center">
-                                ${isConfirm ? `<button onclick="closeDialog(false)" class="px-5 py-3 text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition">Cancel·lar</button>` : ''}
-                                <button onclick="closeDialog(true)" class="px-6 py-3 ${isConfirm ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-500 hover:bg-blue-600'} text-white rounded-xl font-bold transition">D'acord</button>
+                            ${isPrompt ? `<input type="text" id="dialogPromptInput" class="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl mb-6 text-center text-lg tracking-widest font-mono focus:border-emerald-500 focus:outline-none" placeholder="${state.dialogState.placeholder || ''}">` : ''}
+                            <div class="flex gap-3 justify-center" id="dialogButtonsContainer">
+                                ${showCancel ? `<button onclick="closeDialog(false)" class="px-5 py-3 text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition">Cancel·lar</button>` : ''}
+                                <button onclick="closeDialog(true)" class="px-6 py-3 ${showCancel ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-500 hover:bg-blue-600'} text-white rounded-xl font-bold transition">${isPrompt ? 'Validar' : 'D\'acord'}</button>
                             </div>
                         </div>
                     </div>
@@ -174,54 +324,78 @@
             } else { container.innerHTML = ''; }
         }
 
-        function showDialog(message, type = 'alert', onConfirm = null) { state.dialogState = { isOpen: true, message, type, onConfirm }; renderDialogUI(); }
-        function closeDialog(confirmed) { const onConfirm = state.dialogState.onConfirm; state.dialogState.isOpen = false; renderDialogUI(); if (confirmed && onConfirm) onConfirm(); }
-
-        function renderHome() {
-            return `
-                <div class="flex flex-col items-center justify-center flex-grow text-center py-12">
-                    <i class="ph-duotone ph-compass text-8xl text-emerald-500 mb-6"></i>
-                    <h2 class="text-3xl font-extrabold text-slate-800 mb-4">Experiències Interactives</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl mb-12">
-                        <button onclick="navigateTo('list')" class="p-8 bg-white rounded-3xl border border-slate-200 hover:bg-emerald-50 transition group">
-                            <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition"><i class="ph-fill ph-play text-3xl text-emerald-600"></i></div>
-                            <h3 class="text-xl font-bold text-slate-800">Participar</h3>
-                        </button>
-                        <button onclick="startCreation()" class="p-8 bg-white rounded-3xl border border-slate-200 hover:bg-blue-50 transition group">
-                            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition"><i class="ph-fill ph-plus text-3xl text-blue-600"></i></div>
-                            <h3 class="text-xl font-bold text-slate-800">Crear Ruta</h3>
-                        </button>
-                    </div>
-                    <input type="file" id="importFileInputHome" accept=".json" class="hidden" onchange="importTours(event)">
-                    <button onclick="document.getElementById('importFileInputHome').click()" class="px-8 py-4 bg-white border-2 text-slate-700 font-bold rounded-2xl hover:bg-slate-50 transition shadow-sm w-full md:w-auto flex items-center justify-center gap-2 mx-auto">
-                        <i class="ph-bold ph-upload-simple"></i> Carregar rutes JSON
-                    </button>
-                </div>
-            `;
+        function showDialog(message, type = 'alert', onConfirm = null, placeholder = '') { state.dialogState = { isOpen: true, message, type, onConfirm, placeholder }; renderDialogUI(); }
+        
+        function closeDialog(confirmed) { 
+            const onConfirm = state.dialogState.onConfirm; 
+            const val = document.getElementById('dialogPromptInput') ? document.getElementById('dialogPromptInput').value.trim() : null;
+            state.dialogState.isOpen = false; 
+            renderDialogUI(); 
+            if (confirmed && onConfirm) onConfirm(val); 
         }
 
-        function renderList() {
-            let html = `<div class="mb-6 flex items-center justify-between max-w-4xl mx-auto"><h2 class="text-2xl font-bold text-slate-800">Rutes Disponibles</h2><button onclick="navigateTo('home')" class="p-2 bg-slate-200 rounded-full"><i class="ph ph-arrow-left"></i></button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">`;
-            if (state.tours.length === 0) {
-                html += `<div class="col-span-2 text-center py-12 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500">No hi ha cap ruta guardada actualment.</div>`;
+        function renderHome() {
+            let htmlList = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto w-full mb-8">`;
+            const visibleTours = state.tours.filter(t => !t.id.startsWith('temp-'));
+            if (visibleTours.length === 0) {
+                htmlList += `<div class="col-span-1 md:col-span-2 text-center py-10 bg-white rounded-2xl shadow-sm border border-slate-200 text-slate-500">No hi ha cap ruta guardada actualment a la memòria. Carregueu una carpeta o creeu-ne una de nova.</div>`;
             } else {
-                state.tours.forEach(tour => {
-                    html += `
-                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full">
+                visibleTours.forEach(tour => {
+                    htmlList += `
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full text-left">
                             <h3 class="text-xl font-bold mb-2">${tour.title}</h3>
                             <p class="text-sm text-slate-500 mb-4 flex-grow line-clamp-2">${tour.description || 'Sense descripció.'}</p>
                             <div class="flex gap-2 mt-4">
-                                <button onclick="editTour('${tour.id}')" class="p-3 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="Editar"><i class="ph-bold ph-pencil-simple"></i></button>
-                                <button onclick="startTour('${tour.id}')" class="flex-grow py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold transition">Iniciar</button>
+                                ${window.isAutonomous ? '' : `<button onclick="editTour('${tour.id}')" class="p-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition" title="Editar"><i class="ph-bold ph-pencil-simple"></i></button>`}
+                                <button onclick="checkTourAccess('${tour.id}')" class="flex-grow py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold transition">Iniciar Experiència</button>
                             </div>
                         </div>
                     `;
                 });
             }
-            return html + `</div>`;
+            htmlList += `</div>`;
+
+            let creatorButtons = '';
+            if (!window.isAutonomous) {
+                creatorButtons = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl mt-auto pt-8 border-t border-slate-200">
+                        <button onclick="startCreation()" class="flex flex-col items-center justify-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition group">
+                            <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3 mx-auto group-hover:scale-110 transition"><i class="ph-fill ph-plus text-2xl text-blue-600"></i></div>
+                            <h3 class="text-lg font-bold text-slate-800">Crear Ruta Nova</h3>
+                        </button>
+
+                        <div class="flex flex-col items-center justify-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-emerald-300 hover:bg-emerald-50 transition group relative overflow-hidden">
+                            <input type="file" id="importSingleFileInputHome" accept=".json" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="importTours(event)">
+                            <div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mb-3 mx-auto group-hover:scale-110 transition"><i class="ph-fill ph-file-json text-2xl text-emerald-600"></i></div>
+                            <h3 class="text-lg font-bold text-slate-800">Carregar un Projecte</h3>
+                            <p class="text-xs text-slate-500 mt-1">Importa un únic fitxer JSON</p>
+                        </div>
+
+                        <div class="flex flex-col items-center justify-center p-6 bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-teal-300 hover:bg-teal-50 transition group relative overflow-hidden">
+                            <input type="file" id="importFolderInput" webkitdirectory directory multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onchange="window.importFolder(event)">
+                            <div class="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mb-3 mx-auto group-hover:scale-110 transition"><i class="ph-fill ph-folder-open text-2xl text-teal-600"></i></div>
+                            <h3 class="text-lg font-bold text-slate-800">Carregar Carpeta</h3>
+                            <p class="text-xs text-slate-500 mt-1">S'importaran tots els JSON rutaviva_</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="flex flex-col items-center justify-start flex-grow text-center py-8 w-full max-w-4xl mx-auto">
+                    <i class="ph-duotone ph-compass text-6xl text-emerald-500 mb-4"></i>
+                    <h2 class="text-3xl font-extrabold text-slate-800 mb-8">Rutes Disponibles</h2>
+                    
+                    ${htmlList}
+                    ${creatorButtons}
+                </div>
+            `;
         }
 
-        // Simula la vista prèvia dins de l'editor
+        function renderList() {
+            return renderHome();
+        }
+
         function renderStepPreviewSimulator() {
             if (state.draftTour.steps.length === 0) return '<div class="p-8 text-center text-slate-400 mt-20">Seleccioneu una etapa per previsualitzar-la aquí</div>';
             
@@ -232,30 +406,52 @@
             let contentHtml = '';
             
             if (step.type === 'stage') {
-                contentHtml = `<div class="bg-slate-800 text-white p-6 rounded-2xl text-center border-4 border-slate-700 mb-4">${mediaHtml}<h2 class="text-2xl font-black uppercase">${step.title}</h2></div><button class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Començar etapa</button>`;
+                contentHtml = `<div class="bg-slate-800 text-white p-6 rounded-2xl text-center border-4 border-slate-700 mb-4">${mediaHtml}<h2 class="text-2xl font-black uppercase">${step.title}</h2></div><button onclick="showDialog('Iniciaria l\\'etapa oficialment.')" class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Començar etapa</button>`;
             } else if (step.type === 'info') {
-                contentHtml = `<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4">${mediaHtml}<p class="text-slate-700 text-sm">${step.content}</p></div><button class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Següent</button>`;
+                contentHtml = `<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4">${mediaHtml}<p class="text-slate-700 text-sm">${step.content}</p></div><button onclick="showDialog('Passaria a la següent activitat.')" class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Següent</button>`;
             } else if (step.type === 'quiz') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.map(o=>`<div class="p-3 border-2 rounded-xl text-slate-700 text-sm font-medium">${o}</div>`).join('')}</div></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.map(o=>`<button onclick="showDialog('S\\'ha seleccionat l\\'opció: ${o}')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
             } else if (step.type === 'question') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4 text-sm" placeholder="Escriu aquí..."><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Enviar</button></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4 text-sm" placeholder="Escriu aquí..."><button onclick="showDialog('Comprovaria si el text introduït coincideix amb alguna de les respostes vàlides.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Enviar</button></div>`;
             } else if (step.type === 'mission') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h2 class="font-bold text-sm mb-2">Missió</h2><p class="mb-4 text-xs">${step.instruction}</p>${mediaHtml}<textarea class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" rows="2"></textarea><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Completar</button></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h2 class="font-bold text-sm mb-2">Missió</h2><p class="mb-4 text-xs">${step.instruction}</p>${mediaHtml}<textarea class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" rows="2"></textarea><button onclick="showDialog('Es registraria la resposta de la missió com a completada.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Completar</button></div>`;
             } else if (step.type === 'sort') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.instruction}</h3>${mediaHtml}<div class="space-y-2">${step.correctOrder.map((o,i)=>`<div class="p-3 border-2 rounded-xl text-slate-700 text-xs font-medium flex gap-2"><span class="font-bold text-slate-400">${i+1}.</span> ${o}</div>`).join('')}</div><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mt-4">Comprovar Ordre</button></div>`;
+                if (!state.previewSortOrder || state.previewSortOrder.__id !== state.previewStepIndex) {
+                    let arr = [...step.correctOrder];
+                    for(let i = arr.length - 1; i > 0; i--){
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [arr[i], arr[j]] = [arr[j], arr[i]];
+                    }
+                    if (arr.join() === step.correctOrder.join() && arr.length > 1) {
+                        [arr[0], arr[1]] = [arr[1], arr[0]];
+                    }
+                    state.previewSortOrder = arr;
+                    state.previewSortOrder.__id = state.previewStepIndex;
+                }
+                
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.instruction}</h3>${mediaHtml}
+                    <div class="flex flex-col gap-2 mt-4">
+                        ${state.previewSortOrder.map((item, i) => `
+                            <div draggable="true" ondragstart="window.dragSortStart(event, ${i})" ondragover="window.dragSortOver(event)" ondrop="window.dragSortDrop(event, ${i})" class="flex items-center gap-3 bg-white p-3 border-2 border-slate-200 rounded-xl cursor-move touch-none">
+                                <i class="ph-bold ph-dots-six-vertical text-slate-400 text-xl"></i>
+                                <span class="flex-grow font-medium text-slate-800 pointer-events-none">${item}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button onclick="showDialog('Això verificaria si heu col·locat correctament els elements (mitjançant arrossegament drag & drop).')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mt-4">Comprovar Ordre</button></div>`;
             } else if (step.type === 'ar_exp') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase block mb-2">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p><img src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase block mb-2">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p><img src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button onclick="showDialog('Aquí s\\'obriria la càmera per buscar la imatge d\\'activació.')" class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
             } else if (step.type === 'find_spot') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p><div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p><div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button onclick="showDialog('Comprovaria la posició de l\\'usuari mitjançant la geolocalització del mòbil.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
             } else if (step.type === 'scan_code') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button onclick="showDialog('Això compararia el text introduït amb el codi exacte de validació.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
             } else if (step.type === 'survey') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.filter(o=>o).map(o=>`<div class="p-3 border-2 rounded-xl text-slate-700 text-sm font-medium">${o}</div>`).join('')}</div></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.filter(o=>o).map(o=>`<button onclick="showDialog('L\\'opció escollida seria registrada per a la posterior avaluació.')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
             }
 
             return `
-                <div class="p-4 pt-6 min-h-full flex flex-col pointer-events-none">
-                    <div class="mb-4">
+                <div class="p-4 pt-6 min-h-full flex flex-col pointer-events-auto">
+                    <div class="mb-4 pointer-events-none">
                         <div class="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1"><span>${state.draftTour.title || 'Ruta sense títol'}</span><span>Pas ${state.previewStepIndex+1}/${state.draftTour.steps.length}</span></div>
                         <div class="w-full bg-slate-200 rounded-full h-1"><div class="bg-emerald-500 h-1 rounded-full" style="width: ${((state.previewStepIndex)/state.draftTour.steps.length)*100}%"></div></div>
                     </div>
@@ -284,6 +480,7 @@
                                 <p class="font-bold text-slate-800 line-clamp-2 mt-2">${step.title || step.question || step.instruction || step.locationHint || 'Sense contingut principal'}</p>
                             </div>
                             <div class="flex flex-col gap-1 items-center shrink-0">
+                                <button onclick="previewFromStep(${index})" class="text-emerald-500 hover:bg-emerald-50 p-1 rounded transition" title="Provar des d'aquí"><i class="ph-bold ph-play"></i></button>
                                 <button onclick="openModal('${step.type}', ${index})" class="text-blue-500 hover:bg-blue-50 p-1 rounded transition" title="Editar"><i class="ph-bold ph-pencil-simple"></i></button>
                                 <button onclick="moveStep(${index}, -1)" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded transition" ${index === 0 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''} title="Pujar"><i class="ph-bold ph-caret-up"></i></button>
                                 <button onclick="moveStep(${index}, 1)" class="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-1 rounded transition" ${index === state.draftTour.steps.length - 1 ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : ''} title="Baixar"><i class="ph-bold ph-caret-down"></i></button>
@@ -330,8 +527,19 @@
 
         function setPreviewStep(idx, e) {
             if (e && (e.target.closest('button') || e.target.tagName.toLowerCase() === 'button')) return;
+            
+            // Guardem l'estat actual de l'scroll tant de la finestra com de la llista
+            const listContainer = document.querySelector('.overflow-y-auto.pr-2.no-scrollbar');
+            const scrollPos = listContainer ? listContainer.scrollTop : 0;
+            const windowScroll = window.scrollY;
+
             state.previewStepIndex = idx;
             renderView();
+            
+            // Restaurem l'scroll immediatament després de renderitzar
+            const newListContainer = document.querySelector('.overflow-y-auto.pr-2.no-scrollbar');
+            if (newListContainer) newListContainer.scrollTop = scrollPos;
+            window.scrollTo(0, windowScroll);
         }
 
         function handleTriggerUpload(event) {
@@ -350,8 +558,8 @@
                     document.getElementById('modalInputTriggerB64').value = canvas.toDataURL('image/jpeg', 0.8);
                     
                     const tCanvas = document.createElement('canvas');
-                    tCanvas.width = 16; tCanvas.height = 16;
-                    tCanvas.getContext('2d').drawImage(img, 0, 0, 16, 16);
+                    tCanvas.width = 64; tCanvas.height = 64;
+                    tCanvas.getContext('2d').drawImage(img, 0, 0, 64, 64);
                     document.getElementById('modalInputTriggerTemplate').value = tCanvas.toDataURL('image/jpeg', 0.8);
                     
                     const preview = document.getElementById('triggerPreview');
@@ -417,14 +625,21 @@
                         <textarea id="modalTourDesc" rows="3" class="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none transition" placeholder="Expliqueu breument de què tracta aquesta aventura...">${state.draftTour.description}</textarea>
                     </div>
                     <div class="mb-4 border-t border-slate-200 pt-4">
-                        <label class="block text-sm font-bold text-slate-700 mb-2">URL de Google Sheets (Opcional - per rebre resultats globals)</label>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Control d'Accés</label>
+                        <select id="modalTourAccess" class="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none transition mb-4" onchange="if(this.value === 'restricted') { document.getElementById('modalTourTracking').value = 'https://script.google.com/macros/s/AKfycbw7_V0bW_fqNXoFf9hPpwBDKEXZMT735ulmCVp9HegUZ69W5_7FvgjQ8FtJG3g6izc/exec'; }">
+                            <option value="free" ${state.draftTour.accessType === 'free' ? 'selected' : ''}>Lliure (Obert a tothom)</option>
+                            <option value="restricted" ${state.draftTour.accessType === 'restricted' ? 'selected' : ''}>Restringit (Requereix validació per Codi PIN)</option>
+                        </select>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">URL de Google Sheets (Obligatori si hi ha restriccions)</label>
                         <input type="text" id="modalTourTracking" value="${state.draftTour.trackingUrl || ''}" class="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-emerald-500 focus:outline-none transition" placeholder="https://script.google.com/macros/s/...">
-                        <p class="text-xs text-slate-500 mt-1">El registre s'enviarà junt en acabar la ruta.</p>
+                        <p class="text-xs text-slate-500 mt-2">El registre de la partida s'enviarà a aquesta adreça en acabar la ruta.</p>
+                    </div>
+                    <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl mt-6">
+                        <p class="text-sm text-blue-800 font-medium leading-relaxed"><i class="ph-bold ph-info"></i> Com voleu desar-ho? Podeu descarregar la ruta com a JSON, o generar-la com un HTML autònom per distribuir-la.</p>
                     </div>
                 `;
                 footerHtml = `
                     <div class="flex flex-col gap-3 mt-6 border-t border-slate-100 pt-6">
-                        <button onclick="finalizeSaveTour(false, false)" class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-md"><i class="ph-bold ph-list-plus text-xl"></i> Desar a la llista local</button>
                         <button onclick="finalizeSaveTour(true, true)" class="w-full py-3 bg-white border-2 border-blue-200 hover:border-blue-400 text-blue-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-download-simple text-xl"></i> Desar com a fitxer JSON</button>
                         <button onclick="generateAutonomousHTML()" class="w-full py-3 bg-white border-2 border-purple-200 hover:border-purple-400 text-purple-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-file-html text-xl"></i> Generar ruta HTML (Autònoma)</button>
                         <button onclick="closeModal()" class="w-full py-3 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-xl font-bold transition mt-2">Cancel·lar i seguir editant</button>
@@ -447,7 +662,7 @@
                 state.modalState.tempQuizOptions = editData.correctOrder || ['', '', ''];
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Instrucció per ordenar</label><input type="text" id="modalInput1" value="${editData.instruction||''}" class="w-full p-3 border rounded-xl" placeholder="Ordena els elements..."></div>${mediaHtml}
                 <div class="mb-4"><label class="block font-bold">Punts (1r intent / Següents)</label><div class="flex gap-2"><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-2 border"><input type="number" id="modalScore2" value="${editData.scoreNextTries||5}" class="w-full p-2 border"></div></div>
-                <div class="mb-4"><label class="block font-bold">Conceptes en ordre correcte</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2 items-center"><span class="font-bold text-slate-400 w-6">${i+1}.</span><input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-yellow-500 font-bold">+ Afegir element</button></div>`;
+                <div class="mb-4"><label class="block font-bold">Conceptes en ordre correcte</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2 items-center"><span class="font-bold text-slate-400 w-6">${i+1}.</span><input type="text" id="opt${i}" value="${o}" oninput="state.modalState.tempQuizOptions[${i}] = this.value" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-yellow-500 font-bold">+ Afegir element</button></div>`;
             } else if (type === 'find_spot') {
                 formHtml = `<div class="mb-4"><label class="block font-bold">Indicació del Lloc</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.locationHint||''}</textarea></div>
                 <div id="creatorMap" class="w-full h-48 bg-slate-200 rounded-xl mb-4"></div><label class="block font-bold">Radi (m)</label><input type="number" id="modalRadius" value="${editData.targetRadius||30}" class="w-full p-3 border rounded-xl" onchange="updateMapCircle(this.value)">
@@ -458,6 +673,10 @@
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Instruccions per trobar el codi</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.instruction||''}</textarea></div>
                 <div class="mb-4"><label class="block font-bold">Codi exacte requerit</label><input type="text" id="modalInput2" value="${editData.code||''}" class="w-full p-3 border rounded-xl"></div>`;
             } else if (type === 'ar_exp') {
+                const arType = document.getElementById('modalInputArType')?.value || editData.arType || '3d';
+                const arUrl = document.getElementById('modalInputArUrl')?.value || (editData.arType !== 'text' ? editData.arContent : '') || '';
+                const arText = document.getElementById('modalInputArText')?.value || (editData.arType === 'text' ? editData.arContent : '') || '';
+                
                 formHtml = `${geoPanel}
                 <div class="mb-4">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Instruccions de la interacció AR</label>
@@ -466,28 +685,28 @@
                 <div class="mb-4">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Imatge d'Activació (Pugeu l'arxiu per detecció Real)</label>
                     <input type="file" id="modalInputTriggerFile" accept="image/*" onchange="handleTriggerUpload(event)" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg">
-                    <input type="hidden" id="modalInputTriggerB64" value="">
-                    <input type="hidden" id="modalInputTriggerTemplate" value="">
+                    <input type="hidden" id="modalInputTriggerB64" value="${editData.triggerImageB64 || ''}">
+                    <input type="hidden" id="modalInputTriggerTemplate" value="${editData.triggerTemplateB64 || ''}">
                     <img id="triggerPreview" src="${editData.triggerImageB64 || ''}" class="h-24 mt-3 rounded-lg border-2 border-teal-200 object-cover shadow-sm" style="display: ${editData.triggerImageB64 ? 'block' : 'none'}">
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Contingut AR a projectar</label>
                     <select id="modalInputArType" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" 
                         onchange="document.getElementById('arUrlDiv').style.display = this.value === 'text' ? 'none' : 'block'; document.getElementById('arTextDiv').style.display = this.value === 'text' ? 'block' : 'none';">
-                        <option value="3d" ${editData.arType === '3d' ? 'selected' : ''}>Model 3D (.glb o .gltf)</option>
-                        <option value="image" ${editData.arType === 'image' ? 'selected' : ''}>Imatge</option>
-                        <option value="video" ${editData.arType === 'video' ? 'selected' : ''}>Vídeo</option>
-                        <option value="audio" ${editData.arType === 'audio' ? 'selected' : ''}>Àudio</option>
-                        <option value="text" ${editData.arType === 'text' ? 'selected' : ''}>Missatge de Text</option>
+                        <option value="3d" ${arType === '3d' ? 'selected' : ''}>Model 3D (.glb o .gltf)</option>
+                        <option value="image" ${arType === 'image' ? 'selected' : ''}>Imatge</option>
+                        <option value="video" ${arType === 'video' ? 'selected' : ''}>Vídeo</option>
+                        <option value="audio" ${arType === 'audio' ? 'selected' : ''}>Àudio</option>
+                        <option value="text" ${arType === 'text' ? 'selected' : ''}>Missatge de Text</option>
                     </select>
                 </div>
-                <div id="arUrlDiv" class="mb-2" style="display: ${editData.arType === 'text' ? 'none' : 'block'}">
+                <div id="arUrlDiv" class="mb-2" style="display: ${arType === 'text' ? 'none' : 'block'}">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">URL del Recurs (3D, Imatge, Vídeo o Àudio)</label>
-                    <input type="text" id="modalInputArUrl" value="${editData.arType !== 'text' ? (editData.arContent || '') : ''}" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="https://...">
+                    <input type="text" id="modalInputArUrl" value="${arUrl}" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="https://...">
                 </div>
-                <div id="arTextDiv" class="mb-2" style="display: ${editData.arType === 'text' ? 'block' : 'none'}">
+                <div id="arTextDiv" class="mb-2" style="display: ${arType === 'text' ? 'block' : 'none'}">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Missatge Ocult (Text flotant)</label>
-                    <textarea id="modalInputArText" rows="2" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Escriu el text que apareixerà flotant a l'espai...">${editData.arType === 'text' ? (editData.arContent || '') : ''}</textarea>
+                    <textarea id="modalInputArText" rows="2" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Escriu el text que apareixerà flotant a l'espai...">${arText}</textarea>
                 </div>`;
             } else if (type === 'survey') {
                 state.modalState.tempQuizOptions = editData.options || ['', '', '', ''];
@@ -515,43 +734,6 @@
             `;
         }
 
-        function renderMedia(step) {
-            if (!step.mediaType || step.mediaType === 'none' || !step.mediaUrl) return '';
-            
-            const isDark = step.type === 'stage';
-            const borderColor = isDark ? 'border-slate-600' : 'border-slate-200';
-            const bgColor = isDark ? 'bg-slate-700' : 'bg-slate-50';
-            const textColor = isDark ? 'text-emerald-400' : 'text-slate-500';
-
-            if (step.mediaType === 'image') {
-                return `<img src="${step.mediaUrl}" class="w-full h-auto max-h-64 object-cover rounded-xl mb-6 shadow-sm border ${borderColor}" onerror="this.style.display='none'">`;
-            } else if (step.mediaType === 'video') {
-                const embedUrl = getEmbedUrl(step.mediaUrl);
-                if (embedUrl.includes('youtube') || embedUrl.includes('vimeo')) {
-                    return `<div class="video-container mb-6 shadow-sm border ${borderColor} rounded-xl overflow-hidden"><iframe src="${embedUrl}" frameborder="0" allowfullscreen></iframe></div>`;
-                } else {
-                    return `<video src="${step.mediaUrl}" controls class="w-full max-h-64 rounded-xl mb-6 bg-black shadow-sm border ${borderColor}"></video>`;
-                }
-            } else if (step.mediaType === 'audio') {
-                return `
-                    <div class="${bgColor} border ${borderColor} p-4 rounded-xl mb-6 flex flex-col items-center gap-3 w-full shadow-sm">
-                        <i class="ph-duotone ph-headphones text-4xl ${textColor}"></i>
-                        <audio src="${step.mediaUrl}" controls class="w-full outline-none"></audio>
-                    </div>
-                `;
-            } else if (step.mediaType === '3d') {
-                return `
-                    <div class="mb-6 relative group w-full shadow-sm">
-                        <model-viewer src="${step.mediaUrl}" auto-rotate camera-controls shadow-intensity="1" class="w-full h-64 ${bgColor} rounded-xl border ${borderColor}"></model-viewer>
-                        <div class="absolute top-2 right-2 bg-slate-900/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">
-                            <i class="ph ph-hand-swipe-left"></i> Interactiu
-                        </div>
-                    </div>
-                `;
-            }
-            return '';
-        }
-
         function renderPlay() {
             const tour = state.tours.find(t => t.id === state.playState.tourId);
             const step = tour.steps[state.playState.currentStep];
@@ -559,7 +741,6 @@
 
             let mainContent = '';
             
-            // Lògica de Geoverificació
             if ((step.hasGeo || step.type === 'find_spot') && !state.playState.geoVerified) {
                 mainContent = `
                     <div class="bg-white p-8 rounded-3xl border-4 border-red-100 text-center fade-in">
@@ -619,17 +800,13 @@
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.instruction}</h3>${media}
                         <div class="flex flex-col gap-2 mt-4">
                             ${state.playState.currentSortOrder.map((item, i) => `
-                                <div class="flex items-center gap-3 bg-white p-3 border-2 border-slate-200 rounded-xl">
-                                    <span class="font-bold text-slate-400 w-6">${i+1}.</span>
-                                    <span class="flex-grow font-medium text-slate-800">${item}</span>
-                                    <div class="flex flex-col gap-1">
-                                        <button onclick="moveSortItem(${i}, -1)" class="p-1 text-slate-400 hover:text-slate-700 bg-slate-100 rounded" ${i===0?'disabled style="opacity:0.3"':''}><i class="ph-bold ph-caret-up"></i></button>
-                                        <button onclick="moveSortItem(${i}, 1)" class="p-1 text-slate-400 hover:text-slate-700 bg-slate-100 rounded" ${i===state.playState.currentSortOrder.length-1?'disabled style="opacity:0.3"':''}><i class="ph-bold ph-caret-down"></i></button>
-                                    </div>
+                                <div draggable="true" ondragstart="window.dragSortStart(event, ${i})" ondragover="window.dragSortOver(event)" ondrop="window.dragSortDrop(event, ${i})" class="flex items-center gap-3 bg-white p-4 border-2 border-slate-200 rounded-xl cursor-move hover:border-slate-300 transition touch-none">
+                                    <i class="ph-bold ph-dots-six-vertical text-slate-400 text-2xl"></i>
+                                    <span class="flex-grow font-medium text-slate-800 text-lg pointer-events-none">${item}</span>
                                 </div>
                             `).join('')}
                         </div>
-                        <button onclick="verifySort()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold mt-6">Comprovar Ordre</button></div>`;
+                        <button onclick="verifySort()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold mt-6 text-lg">Comprovar Ordre</button></div>`;
                 } else if (step.type === 'mission') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h2 class="font-bold mb-4">Missió</h2><p class="mb-6">${step.instruction}</p>${media}
                         <textarea id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-4" rows="4"></textarea>
@@ -682,10 +859,16 @@
         function renderSummary() {
             return `<div class="flex flex-col items-center justify-center flex-grow text-center py-8 fade-in"><div class="w-24 h-24 bg-yellow-100 text-yellow-500 rounded-full flex items-center justify-center mb-6 shadow-xl"><i class="ph-fill ph-trophy text-5xl"></i></div>
                     <h2 class="text-3xl font-extrabold text-slate-800 mb-2">Aventura Aconseguida!</h2><p class="text-slate-600 mb-8">Puntuació final: ${state.playState.score} de ${state.playState.maxScore}</p>
-                    <button onclick="navigateTo('home')" class="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold">Tornar a l'inici</button></div>`;
+                    <button onclick="if(state.playState.tourId === 'temp-preview') { navigateTo('create'); } else { navigateTo('home'); }" class="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold">Tornar a l'inici</button></div>`;
         }
 
-        function navigateTo(view) { state.playState.feedbackMsg = null; state.modalState.isOpen = false; if (mapInstance) { mapInstance.remove(); mapInstance = null; } state.view = view; renderAll(); }
+        function navigateTo(view) { 
+            state.playState.feedbackMsg = null; 
+            state.modalState.isOpen = false; 
+            if (mapInstance) { mapInstance.remove(); mapInstance = null; } 
+            state.view = (view === 'list') ? 'home' : view; 
+            renderAll(); 
+        }
 
         function getVisualsForStepType(type) {
             const map = {
@@ -880,23 +1063,28 @@
         function addQuizOption() { state.modalState.tempQuizOptions.push(''); renderModal(); }
         function removeQuizOption(i) { state.modalState.tempQuizOptions.splice(i, 1); renderModal(); }
 
-        function startCreation() { state.draftTour = { id: null, title: '', description: '', steps: [], trackingUrl: '' }; navigateTo('create'); }
+        function startCreation() { state.draftTour = { id: null, title: '', description: '', steps: [], trackingUrl: '', accessType: 'free' }; navigateTo('create'); }
         function editTour(id) { state.draftTour = JSON.parse(JSON.stringify(state.tours.find(t=>t.id===id))); navigateTo('create'); }
         
         function finalizeSaveTour(downloadAsJson = false, keepEditing = false) {
             const titleEl = document.getElementById('modalTourTitle');
             const descEl = document.getElementById('modalTourDesc');
             const trackEl = document.getElementById('modalTourTracking');
+            const accessEl = document.getElementById('modalTourAccess');
             
             if (titleEl) state.draftTour.title = titleEl.value.trim();
             if (descEl) state.draftTour.description = descEl.value.trim();
             if (trackEl) state.draftTour.trackingUrl = trackEl.value.trim();
+            if (accessEl) state.draftTour.accessType = accessEl.value;
             
             if (!state.draftTour.title) {
                 return showDialog("Cal afegir un títol a la ruta abans de desar-la.");
             }
             if (state.draftTour.steps.length === 0) {
                 return showDialog("Cal afegir almenys un contingut o etapa a la ruta.");
+            }
+            if (state.draftTour.accessType === 'restricted' && !state.draftTour.trackingUrl) {
+                return showDialog("Heu marcat la ruta com a restringida. Heu d'afegir la URL de Google Sheets perquè es puguin validar els codis d'accés correctament.");
             }
             
             let savedTour;
@@ -918,20 +1106,20 @@
             if (downloadAsJson && savedTour) {
                 triggerDownloadJSON(savedTour);
                 if (keepEditing) {
-                    showDialog("El fitxer JSON s'ha descarregat correctament. Podeu continuar editant la ruta.");
+                    closeModal();
                     return; 
                 }
             }
 
             closeModal();
-            navigateTo('list');
+            navigateTo('home');
         }
 
         function triggerDownloadJSON(tourObj) {
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify([tourObj], null, 2));
             const dl = document.createElement('a');
             dl.setAttribute("href", dataStr);
-            dl.setAttribute("download", `${(tourObj.title || 'ruta').replace(/[^a-z0-9]/gi, '_').toLowerCase()}_rutaviva.json`);
+            dl.setAttribute("download", `rutaviva_${(tourObj.title || 'ruta').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`);
             document.body.appendChild(dl); 
             dl.click();
             dl.remove();
@@ -955,25 +1143,14 @@
             
             const scriptToInject = `
                 // Codi injectat per generar l'experiència autònoma
+                window.isAutonomous = true;
                 window.onload = () => {
                     state.tours = [${JSON.stringify(tourToExport)}];
-                    state.view = 'play';
-                    state.playState = { 
-                        tourId: '${tourToExport.id}', 
-                        currentStep: 0, 
-                        score: 0, 
-                        attempts: {}, 
-                        feedbackMsg: null, 
-                        geoVerified: false, 
-                        maxScore: ${tourToExport.steps.reduce((a,s) => a + (s.scoreFirstTry || 10), 0)},
-                        stepStartTime: Date.now(),
-                        interactionLogs: []
-                    };
-                    renderAll();
+                    checkTourAccess('${tourToExport.id}');
                 };
             `;
             
-            htmlContent = htmlContent.replace(/window\.onload = \(\) => renderAll\(\);/, scriptToInject);
+            htmlContent = htmlContent.replace(/window\.onload = \(\) => \{\s*renderAll\(\);\s*loadToursFromCatalog\(\);\s*\};/, scriptToInject);
             
             const blob = new Blob(["<!DOCTYPE html>\n<html lang=\"ca\">\n" + htmlContent + "\n</html>"], {type: "text/html;charset=utf-8"});
             const dl = document.createElement('a');
@@ -982,7 +1159,7 @@
             document.body.appendChild(dl);
             dl.click();
             dl.remove();
-            showDialog("S'ha generat i descarregat l'arxiu HTML. Aquest arxiu es pot obrir en qualsevol navegador per jugar la ruta de forma directa, i ja conté totes les dades incloses.");
+            closeModal();
         }
 
         // --- SISTEMA DE SEGUIMENT I RESPOSTES ---
@@ -1024,14 +1201,66 @@
             }).catch(e => console.log('Notes: Tracking no enviat', e));
         }
 
-        function startTour(id) {
+        function checkTourAccess(id) {
             const tour = state.tours.find(t=>t.id===id);
-            const maxScore = tour.steps.reduce((acc, step) => {
-                if (step.type === 'quiz' || step.type === 'question' || step.type === 'sort') return acc + (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
-                return acc;
-            }, 0);
-            state.playState = { tourId: id, currentStep: 0, score: 0, attempts: {}, feedbackMsg: null, geoVerified: false, maxScore: maxScore, stepStartTime: Date.now(), interactionLogs: [], currentSortOrder: null };
-            navigateTo('play');
+            if (tour.accessType === 'restricted') {
+                if (!tour.trackingUrl) {
+                    return showDialog("Aquesta ruta està restringida però no té cap servidor configurat per validar l'accés. Modifiqueu l'experiència per incloure la URL.", "alert");
+                }
+                
+                showDialog("Aquesta experiència és privada. Introdueix el codi per començar:", "prompt", (code) => {
+                    if (!code) return;
+                    
+                    const btnContainer = document.getElementById('dialogButtonsContainer');
+                    if(btnContainer) btnContainer.innerHTML = `<div class="px-6 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold flex items-center gap-2"><i class="ph ph-spinner animate-spin text-xl"></i> Validant...</div>`;
+
+                    fetch(tour.trackingUrl + '?action=verify&code=' + encodeURIComponent(code))
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.valid) {
+                                state.dialogState.isOpen = false;
+                                renderDialogUI();
+                                startTour(id);
+                            } else {
+                                showDialog("El codi introduït no existeix o no és vàlid.", "alert");
+                            }
+                        })
+                        .catch(err => {
+                            showDialog("S'ha produït un error connectant amb el servidor en validar el codi. Comproveu la connexió a internet o la configuració de la URL.", "alert");
+                        });
+                }, "Codi (ex: 45A9)");
+            } else {
+                startTour(id);
+            }
+        }
+
+        function startTour(id, startStepIndex = 0) {
+            const tour = state.tours.find(t=>t.id===id);
+            
+            const initPlay = () => {
+                const maxScore = tour.steps.reduce((acc, step) => {
+                    if (step.type === 'quiz' || step.type === 'question' || step.type === 'sort') return acc + (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
+                    return acc;
+                }, 0);
+                state.playState = { tourId: id, currentStep: startStepIndex, score: 0, attempts: {}, feedbackMsg: null, geoVerified: false, maxScore: maxScore, stepStartTime: Date.now(), interactionLogs: [], currentSortOrder: null };
+                navigateTo('play');
+            };
+
+            // Demanar permisos de càmera a l'inici independentment de si hi ha AR
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                    .then(stream => {
+                        stream.getTracks().forEach(track => track.stop());
+                        initPlay();
+                    })
+                    .catch(err => {
+                        showDialog("L'aplicació requereix accés a la càmera per a algunes funcions. Assegureu-vos de donar els permisos o d'obrir el fitxer en un entorn compatible. Es podrà continuar l'experiència visualitzant el contingut igualment.", "alert", () => {
+                            initPlay();
+                        });
+                    });
+            } else {
+                initPlay();
+            }
         }
 
         function previewFromStep(i) {
@@ -1040,9 +1269,7 @@
             const existing = state.tours.findIndex(t=>t.id===id);
             if (existing!==-1) state.tours[existing] = { ...state.draftTour, id };
             else state.tours.push({ ...state.draftTour, id });
-            startTour(id);
-            state.playState.currentStep = i;
-            renderView();
+            startTour(id, i);
         }
 
         function answerQuiz(i) {
@@ -1146,157 +1373,394 @@
         }
 
         function retryStep() { state.playState.feedbackMsg = null; renderView(); }
-        function confirmExit() { showDialog("Vols sortir de l'experiència?", "confirm", () => navigateTo('list')); }
+        function confirmExit() { 
+            showDialog("Voleu sortir de l'experiència?", "confirm", () => {
+                if (state.playState.tourId === 'temp-preview') {
+                    navigateTo('create');
+                } else {
+                    navigateTo('home');
+                }
+            }); 
+        }
+        function importTours(e) { const f = e.target.files[0]; const reader = new FileReader(); reader.onload = ev => { try { JSON.parse(ev.target.result).forEach(t => state.tours.push(t)); navigateTo('list'); } catch(err) { showDialog("Error JSON"); } }; reader.readAsText(f); }
 
-        // --- CÀMERA AR I DETECCIÓ VISUAL AVANÇADA ---
-        function startARCamera() {
-            const container = document.getElementById('ar-fullscreen-container');
-            const videoElement = document.getElementById('ar-video-feed');
-            const contentOverlay = document.getElementById('ar-content-overlay');
-            const scanUI = document.getElementById('ar-scan-ui');
-            
-            const step = state.tours.find(t => t.id === state.playState.tourId).steps[state.playState.currentStep];
-
-            document.getElementById('ar-ghost-image').src = step.triggerImageB64 || defaultB64;
-            document.getElementById('ar-scan-line').classList.remove('hidden');
-            document.getElementById('ar-instruction-text').innerText = "Cercant la imatge... Mantingueu el dispositiu estable apuntant al patró.";
-            
-            container.classList.remove('hidden');
-            contentOverlay.innerHTML = ''; 
-            contentOverlay.classList.add('hidden');
-            scanUI.classList.remove('hidden');
-
-            arScanActive = true;
-            window.arMatchFrames = 0;
-
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(stream => {
-                    currentVideoStream = stream;
-                    videoElement.srcObject = stream;
-                    videoElement.onloadedmetadata = () => {
-                        videoElement.play();
-                        requestAnimationFrame(() => detectTriggerImage(step.triggerTemplateB64 || defaultB64));
-                    };
-                })
-                .catch(err => {
-                    arScanActive = false;
-                    showDialog("No s'ha pogut accedir a la càmera. Assegureu-vos de donar permisos.");
-                    container.classList.add('hidden');
-                });
+        // --- CÀMERA AR INTEGRADOR MINDAR ---
+        function parseGoogleDriveUrl(url, type) {
+            if (!url) return '';
+            const driveRegex = /(?:https:\/\/)?(?:drive\.google\.com\/)(?:file\/d\/|open\?id=)([\w-]+)/;
+            const match = url.match(driveRegex);
+            if (match && match[1]) {
+                const fileId = match[1];
+                return `https://drive.google.com/uc?export=download&id=${fileId}`;
+            }
+            return url; 
         }
 
-        function detectTriggerImage(templateB64) {
-            if (!arScanActive) return;
+        function bufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            const chunkSize = 0x8000;
+            for (let i = 0; i < len; i += chunkSize) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, len)));
+            }
+            return window.btoa(binary);
+        }
+
+        function generateAFrameHTML(step, base64MindData) {
+            const cType = step.arType;
+            const rawUrl = step.arContent;
+            const cUrlSafe = parseGoogleDriveUrl(rawUrl, cType);
             
-            const video = document.getElementById('ar-video-feed');
+            let assetsHtml = '<a-assets timeout="10000">\n';
+            let entityHtml = '';
+            let requiresAssets = false; 
+            let requiresMediaPlay = false;
+
+            const contentPosition = '0 0 0';
+            const contentRotation = '0 0 0';
+            const cScale = '1.0';
             
-            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-                if (!window.arTemplateImg) {
-                    window.arTemplateImg = new Image();
-                    window.arTemplateImg.src = templateB64;
-                    return requestAnimationFrame(() => detectTriggerImage(templateB64));
-                }
-                if (!window.arTemplateData && window.arTemplateImg.complete) {
-                    const c = document.createElement('canvas');
-                    c.width = 16; c.height = 16;
-                    c.getContext('2d').drawImage(window.arTemplateImg, 0, 0, 16, 16);
-                    window.arTemplateData = c.getContext('2d').getImageData(0,0,16,16).data;
-                }
+            if (cType === 'text') {
+                const cText = rawUrl.replace(/"/g, '&quot;');
+                entityHtml = `<a-entity dynamic-text="text: ${cText}; textColor: #ffffff; bgColor: #4f46e5; bgTransparent: false" position="${contentPosition}" rotation="${contentRotation}" scale="${cScale} ${cScale} ${cScale}"></a-entity>\n`;
+            } else if (cType === 'image') {
+                entityHtml = `<a-entity dynamic-ar-image="src: ${cUrlSafe}" position="${contentPosition}" rotation="${contentRotation}"></a-entity>\n`;
+            } else if (cType === 'video') {
+                assetsHtml += `<video id="ar-media" src="${cUrlSafe}" crossorigin="anonymous" playsinline webkit-playsinline loop muted></video>\n`;
+                requiresAssets = true;
+                requiresMediaPlay = true;
+                entityHtml = `<a-video src="#ar-media" position="${contentPosition}" rotation="${contentRotation}" scale="${cScale} ${cScale} ${cScale}" material="side: double" auto-ratio media-handler="target: #ar-media"></a-video>\n`;
+            } else if (cType === 'audio') {
+                assetsHtml += `<audio id="ar-media" src="${cUrlSafe}" preload="auto" loop></audio>\n`;
+                requiresAssets = true;
+                requiresMediaPlay = true;
+                entityHtml = `<a-entity dynamic-text="text: 🔊; textColor: #ffffff; bgColor: #4f46e5; bgTransparent: false" position="${contentPosition}" rotation="${contentRotation}" scale="0.5 0.5 0.5" media-handler="target: #ar-media"></a-entity>\n`;
+            } else if (cType === '3d') {
+                entityHtml = `<a-entity gltf-model="${cUrlSafe}" position="${contentPosition}" rotation="${contentRotation}" animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear" auto-scale-model="userScale: ${cScale}"></a-entity>\n`;
+            }
 
-                if (window.arTemplateData) {
-                    const c = document.createElement('canvas');
-                    c.width = 16; c.height = 16;
-                    const ctx = c.getContext('2d');
+            assetsHtml += '</a-assets>\n';
+            
+            if (!requiresAssets) assetsHtml = '';
+
+            const safeAssets = assetsHtml.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, " ");
+            const safeEntity = entityHtml.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, " ");
+
+            const uiHtml = `<div id="ui-layer" style="position: absolute; top: 20px; width: 100%; text-align: center; color: white; z-index: 100; pointer-events: none; text-shadow: 1px 1px 3px rgba(0,0,0,0.8); font-family: sans-serif;">
+                <h2>Enfoqueu l'activador per interactuar</h2>
+            </div>`;
+
+            const sEnd = "<" + "/script>";
+
+            return `<!DOCTYPE html>
+            <html lang="ca">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>AR Experience</title>
+                <script src="https://aframe.io/releases/1.4.2/aframe.min.js">${sEnd}
+                <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js">${sEnd}
+                <style>body { margin: 0; overflow: hidden; background: #000; }</style>
+                <script>
                     
-                    const size = Math.min(video.videoWidth, video.videoHeight);
-                    const sx = (video.videoWidth - size) / 2;
-                    const sy = (video.videoHeight - size) / 2;
-                    
-                    ctx.drawImage(video, sx, sy, size, size, 0, 0, 16, 16);
-                    const videoData = ctx.getImageData(0,0,16,16).data;
+                    // COMPONENT AR-IMAGE-DISPLAY: Càrrega intel·ligent per saltar-se les restriccions del WebGL i ajustar l'aspecte perfectament.
+                    AFRAME.registerComponent('dynamic-ar-image', {
+                        schema: { src: {type: 'string'} },
+                        init: function () {
+                            this.el.setAttribute('visible', 'false');
+                            this.loaded = false;
+                            
+                            const marker = this.el.closest('[mindar-image-target]');
+                            if (marker) {
+                                marker.addEventListener('targetFound', () => {
+                                    if (!this.loaded) this.loadImage();
+                                });
+                            }
+                        },
+                        loadImage: async function() {
+                            const url = this.data.src;
+                            
+                            const tryLoad = (u) => new Promise((resolve, reject) => {
+                                const img = new Image();
+                                img.crossOrigin = "anonymous";
+                                img.onload = () => resolve(img);
+                                img.onerror = () => reject(new Error('Failed to load'));
+                                img.src = u;
+                            });
 
-                    let r1=0, g1=0, b1=0;
-                    for(let i=0; i<videoData.length; i+=4) {
-                        r1 += videoData[i]; g1 += videoData[i+1]; b1 += videoData[i+2];
-                    }
-                    r1 /= 256; g1 /= 256; b1 /= 256; 
+                            const proxies = [
+                                url,
+                                'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+                                'https://corsproxy.io/?' + encodeURIComponent(url)
+                            ];
 
-                    let r2=0, g2=0, b2=0;
-                    for(let i=0; i<window.arTemplateData.length; i+=4) {
-                        r2 += window.arTemplateData[i]; g2 += window.arTemplateData[i+1]; b2 += window.arTemplateData[i+2];
-                    }
-                    r2 /= 256; g2 /= 256; b2 /= 256;
+                            let loadedImg = null;
+                            
+                            for (let i = 0; i < proxies.length; i++) {
+                                try {
+                                    loadedImg = await tryLoad(proxies[i]);
+                                    break;
+                                } catch (e) {
+                                    console.warn("Fallada en la via de descàrrega " + i);
+                                }
+                            }
 
-                    let colorDiff = Math.abs(r1-r2) + Math.abs(g1-g2) + Math.abs(b1-b2);
-                    
-                    if (colorDiff < 45) { 
-                        window.arMatchFrames = (window.arMatchFrames || 0) + 1;
-                        if (window.arMatchFrames > 15) { 
-                            arScanActive = false;
-                            window.arTemplateData = null;
-                            window.arTemplateImg = null;
-                            return revealARContent();
+                            if (!loadedImg) {
+                                console.error("Error: El servidor ha bloquejat la textura (CORS).");
+                                this.el.setAttribute('geometry', 'primitive: plane; width: 1; height: 1');
+                                this.el.setAttribute('material', 'color: #ef4444; transparent: true; opacity: 0.5; side: double');
+                                this.el.setAttribute('visible', 'true');
+                                return;
+                            }
+
+                            const ratio = loadedImg.height / loadedImg.width;
+                            this.el.setAttribute('geometry', 'primitive: plane; width: 1; height: ' + ratio);
+
+                            const texture = new THREE.Texture(loadedImg);
+                            texture.needsUpdate = true;
+                            if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+                            else if (THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
+                            texture.minFilter = THREE.LinearFilter;
+
+                            const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+                            this.el.getObject3D('mesh').material = material;
+                            
+                            this.el.setAttribute('visible', 'true');
+                            this.loaded = true;
                         }
-                    } else {
-                        window.arMatchFrames = 0;
+                    });
+
+                    AFRAME.registerComponent('auto-ratio', {
+                        init: function () {
+                            const el = this.el; let ratioApplied = false;
+                            const applyRatio = (w, h) => { if (w && h && !ratioApplied) { const ratio = w / h; el.setAttribute('width', ratio); el.setAttribute('height', 1); ratioApplied = true; } };
+                            
+                            const srcId = el.getAttribute('src');
+                            if (srcId && srcId.startsWith('#')) {
+                                const assetEl = document.querySelector(srcId);
+                                if (assetEl && assetEl.tagName.toLowerCase() === 'img') {
+                                    if (assetEl.complete && assetEl.naturalWidth) applyRatio(assetEl.naturalWidth, assetEl.naturalHeight);
+                                    else assetEl.addEventListener('load', () => applyRatio(assetEl.naturalWidth, assetEl.naturalHeight));
+                                }
+                            }
+
+                            el.addEventListener('materialtextureloaded', () => {
+                                const material = el.components.material && el.components.material.material;
+                                if (material && material.map && material.map.image && !material.map.image.videoWidth) applyRatio(material.map.image.width, material.map.image.height);
+                            });
+                            
+                            if (el.tagName.toLowerCase() === 'a-video') {
+                                if (srcId && srcId.startsWith('#')) {
+                                    const videoEl = document.querySelector(srcId);
+                                    if (videoEl) {
+                                        const checkAndApply = () => { if (videoEl.videoWidth > 0) applyRatio(videoEl.videoWidth, videoEl.videoHeight); };
+                                        videoEl.addEventListener('loadedmetadata', checkAndApply); videoEl.addEventListener('playing', checkAndApply); videoEl.addEventListener('canplay', checkAndApply);
+                                        const fallbackCheck = setInterval(() => { if (ratioApplied) clearInterval(fallbackCheck); else checkAndApply(); }, 500);
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    AFRAME.registerComponent('auto-scale-model', {
+                        schema: { userScale: {type: 'number', default: 1.0} },
+                        init: function () {
+                            let scaleApplied = false;
+                            let retries = 0;
+                            const applyScale = () => {
+                                if (scaleApplied || retries > 20) return;
+                                const model = this.el.getObject3D('mesh');
+                                if (!model) { retries++; setTimeout(applyScale, 200); return; }
+                                const clone = model.clone();
+                                clone.position.set(0,0,0); clone.rotation.set(0,0,0); clone.scale.set(1,1,1); clone.updateMatrixWorld(true);
+                                clone.traverse(node => { if (node.isMesh && node.geometry) node.geometry.computeBoundingBox(); });
+                                const box = new THREE.Box3().setFromObject(clone);
+                                const size = new THREE.Vector3(); box.getSize(size);
+                                const center = new THREE.Vector3(); box.getCenter(center);
+                                if (size.length() === 0) { retries++; setTimeout(applyScale, 200); return; }
+                                const maxDim = Math.max(size.x, size.y, size.z);
+                                if (maxDim > 0 && maxDim !== Infinity && !isNaN(maxDim)) {
+                                    const targetScale = this.data.userScale / maxDim;
+                                    this.el.setAttribute('scale', targetScale + ' ' + targetScale + ' ' + targetScale);
+                                    model.position.set(-center.x, -center.y, -center.z + (size.z / 2) + 0.05);
+                                    scaleApplied = true;
+                                }
+                            };
+                            this.el.addEventListener('model-loaded', () => setTimeout(applyScale, 100));
+                        }
+                    });
+
+                    AFRAME.registerComponent('dynamic-text', {
+                        schema: { text: {type: 'string', default: ''}, textColor: {type: 'string', default: '#ffffff'}, bgColor: {type: 'string', default: '#000000'}, bgTransparent: {type: 'boolean', default: false} },
+                        init: function () {
+                            const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 1024; const ctx = canvas.getContext('2d');
+                            if (!this.data.bgTransparent) { ctx.fillStyle = this.data.bgColor; ctx.globalAlpha = 0.85; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.globalAlpha = 1.0; }
+                            ctx.fillStyle = this.data.textColor; const isIcon = this.data.text.trim() === '🔊';
+                            ctx.font = isIcon ? 'bold 400px sans-serif' : 'bold 56px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            if (isIcon) { ctx.fillText(this.data.text, canvas.width / 2, canvas.height / 2); } else {
+                                const lines = [];
+                                this.data.text.split(/\\\\n|\\n/).forEach(manualLine => {
+                                    let currentLine = '';
+                                    manualLine.split(' ').forEach(word => {
+                                        let testLine = currentLine + word + ' ';
+                                        if (ctx.measureText(testLine).width > 900 && currentLine !== '') { lines.push(currentLine); currentLine = word + ' '; } else currentLine = testLine;
+                                    }); lines.push(currentLine);
+                                });
+                                const startY = (canvas.height / 2) - ((lines.length - 1) * 75 / 2);
+                                lines.forEach((line, i) => ctx.fillText(line.trim(), canvas.width / 2, startY + (i * 75)));
+                            }
+                            const texture = new THREE.CanvasTexture(canvas);
+                            const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+                            this.el.setObject3D('mesh', new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material));
+                        }
+                    });
+
+                    ${requiresMediaPlay ? `
+                    AFRAME.registerComponent('media-handler', {
+                        schema: { target: {type: 'string'} },
+                        init: function () {
+                            const marker = this.el.closest('[mindar-image-target]'); const mediaEl = document.querySelector(this.data.target);
+                            const onFound = () => { if (mediaEl) setTimeout(() => { mediaEl.play().catch(e => console.warn(e)); }, 150); };
+                            const onLost = () => { if (mediaEl) mediaEl.pause(); };
+                            if (marker) { marker.addEventListener('targetFound', onFound); marker.addEventListener('targetLost', onLost); }
+                        }
+                    });` : ''}
+                    
+                    AFRAME.registerComponent('marker-handler', {
+                        init: function() {
+                            const ui = document.getElementById('ui-layer');
+                            this.el.addEventListener('targetFound', () => { if(ui) ui.style.display = 'none'; });
+                            this.el.addEventListener('targetLost', () => { if(ui) ui.style.display = 'block'; });
+                        }
+                    });
+
+                    function b64toBlob(b64Data, contentType='', sliceSize=512) {
+                        const byteCharacters = atob(b64Data);
+                        const byteArrays = [];
+                        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                            const slice = byteCharacters.slice(offset, offset + sliceSize);
+                            const byteNumbers = new Array(slice.length);
+                            for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+                            byteArrays.push(new Uint8Array(byteNumbers));
+                        }
+                        return new Blob(byteArrays, {type: contentType});
                     }
-                }
-            }
-            
-            requestAnimationFrame(() => detectTriggerImage(templateB64));
+
+                    document.addEventListener("DOMContentLoaded", function() {
+                        const b64Data = "${base64MindData}";
+                        const blob = b64toBlob(b64Data, 'application/octet-stream');
+                        const blobUrl = URL.createObjectURL(blob);
+
+                        const sceneEl = document.createElement('a-scene');
+                        sceneEl.setAttribute('mindar-image', 'imageTargetSrc: ' + blobUrl + '; autoStart: true; uiScanning: no;');
+                        sceneEl.setAttribute('color-space', 'sRGB');
+                        sceneEl.setAttribute('renderer', 'colorManagement: true, physicallyCorrectLights');
+                        sceneEl.setAttribute('vr-mode-ui', 'enabled: false');
+                        sceneEl.setAttribute('device-orientation-permission-ui', 'enabled: false');
+
+                        sceneEl.innerHTML = '<a-camera position="0 0 0" look-controls="enabled: false"></a-camera>' + 
+                                            '${safeAssets}' + 
+                                            '<a-entity mindar-image-target="targetIndex: 0" marker-handler>${safeEntity}</a-entity>';
+                                            
+                        document.body.appendChild(sceneEl);
+                        
+                        // Unlock media with click
+                        document.body.addEventListener('click', () => {
+                            const AudioContext = window.AudioContext || window.webkitAudioContext;
+                            if (AudioContext) { const ctx = new AudioContext(); ctx.resume(); }
+                            document.querySelectorAll('video, audio').forEach(el => { if(el.tagName === 'VIDEO') el.muted = false; el.load(); });
+                        }, {once: true});
+                    });
+                ${sEnd}
+            </head>
+            <body>${uiHtml}</body>
+            </html>`;
         }
 
-        function revealARContent() {
-            logInteraction('Detecta AR', 'Imatge activadora detectada', 0);
+        async function startARCamera() {
+            const container = document.getElementById('ar-fullscreen-container');
+            const scanUI = document.getElementById('ar-scan-ui');
+            const overlay = document.getElementById('ar-content-overlay');
             
             const step = state.tours.find(t => t.id === state.playState.tourId).steps[state.playState.currentStep];
-            document.getElementById('ar-scan-ui').classList.add('hidden');
-            
-            const contentOverlay = document.getElementById('ar-content-overlay');
-            contentOverlay.classList.remove('hidden');
 
-            let html = '';
-            if (step.arType === '3d') {
-                html = `<model-viewer src="${step.arContent}" auto-rotate camera-controls style="width:100%; height:60vh; background:transparent;" shadow-intensity="1"></model-viewer>`;
-            } else if (step.arType === 'image') {
-                html = `<img src="${step.arContent}" class="w-11/12 max-h-[70vh] object-contain rounded-2xl shadow-2xl border-4 border-white/80 fade-in">`;
-            } else if (step.arType === 'video') {
-                html = `<video src="${step.arContent}" controls autoplay class="w-11/12 rounded-2xl shadow-2xl border-4 border-white/80 fade-in"></video>`;
-            } else if (step.arType === 'audio') {
-                html = `
-                    <div class="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl flex flex-col items-center border border-white/50 fade-in w-10/12">
-                        <div class="w-24 h-24 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-6 animate-pulse">
-                            <i class="ph-fill ph-speaker-hifi text-5xl"></i>
-                        </div>
-                        <audio src="${step.arContent}" controls autoplay class="w-full"></audio>
-                    </div>
-                `;
-            } else if (step.arType === 'text') {
-                html = `
-                    <div class="bg-white/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl w-10/12 max-h-[70vh] overflow-y-auto border border-white/50 fade-in text-center">
-                        <i class="ph-duotone ph-sparkle text-4xl text-amber-500 mb-4 inline-block"></i>
-                        <p class="text-xl font-bold text-slate-800 leading-relaxed">${step.arContent.replace(/\n/g, '<br>')}</p>
-                    </div>
-                `;
+            if (!step.triggerImageB64 || step.triggerImageB64 === defaultB64) {
+                showDialog("Error: Aquesta activitat no té un patró d'activació configurat correctament.", "alert", () => {
+                    nextStep();
+                });
+                return;
             }
 
-            contentOverlay.innerHTML = `
-                <div class="absolute inset-0 flex items-center justify-center p-4">
-                    ${html}
+            container.classList.remove('hidden');
+            scanUI.classList.remove('hidden');
+            overlay.classList.add('hidden');
+            
+            scanUI.innerHTML = `
+                <div class="flex flex-col justify-center items-center h-full text-white w-full max-w-md mx-auto p-4 text-center">
+                    <i class="ph ph-spinner animate-spin text-6xl text-emerald-500 mb-6"></i>
+                    <h2 class="text-2xl font-bold mb-2 tracking-wide">Iniciant Càmera i Entorn AR...</h2>
+                    <div class="w-full h-3 bg-gray-700 rounded-full overflow-hidden shadow-inner mt-6">
+                        <div id="compilerProgressBar" class="h-full bg-emerald-500 w-0 transition-all duration-300"></div>
+                    </div>
+                    <p id="compilerProgressText" class="text-emerald-300 font-mono text-sm mt-3 font-semibold">0%</p>
                 </div>
-                <button onclick="closeARCamera(false)" class="absolute bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-emerald-600 text-white font-bold rounded-full shadow-2xl border border-emerald-500 flex items-center gap-2 hover:bg-emerald-500 transition hover:scale-105">
-                    Continuar endavant <i class="ph-bold ph-arrow-right"></i>
-                </button>
+                <button onclick="closeARCamera(true)" class="absolute top-6 right-6 w-14 h-14 bg-white/20 backdrop-blur text-white rounded-full flex items-center justify-center z-[200]"><i class="ph-bold ph-x text-2xl"></i></button>
             `;
+
+            try {
+                const img = new Image();
+                img.src = step.triggerImageB64;
+                await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+
+                if (!window.MindARCompiler) {
+                    showDialog("El compilador MindAR no està disponible. Comproveu la connexió.");
+                    closeARCamera(true);
+                    return;
+                }
+
+                const compiler = new window.MindARCompiler();
+                await compiler.compileImageTargets([img], (progress) => {
+                    const pct = Math.round(progress);
+                    const bar = document.getElementById('compilerProgressBar');
+                    const txt = document.getElementById('compilerProgressText');
+                    if (bar) bar.style.width = `${pct}%`;
+                    if (txt) txt.innerText = `${pct}%`;
+                });
+
+                const exportedBuffer = await compiler.exportData();
+                const base64MindData = bufferToBase64(exportedBuffer);
+                
+                // Ara la generació HTML és completament asíncrona a l'interior de l'iframe, sense esperes molestes
+                const finalHtml = generateAFrameHTML(step, base64MindData);
+                
+                scanUI.classList.add('hidden'); 
+                
+                overlay.innerHTML = `
+                    <iframe id="ar-iframe" allow="camera; microphone; accelerometer; magnetometer; gyroscope; display-capture" class="w-full h-full border-0 absolute inset-0 z-10" style="background: black;"></iframe>
+                    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 z-[200]">
+                        <button onclick="closeARCamera(false)" class="px-8 py-4 bg-emerald-600 text-white font-bold rounded-full shadow-2xl border border-emerald-500 flex items-center gap-2 hover:bg-emerald-500 transition hover:scale-105">
+                            Continuar <i class="ph-bold ph-arrow-right"></i>
+                        </button>
+                    </div>
+                `;
+                overlay.classList.remove('hidden');
+
+                const iframe = document.getElementById('ar-iframe');
+                iframe.contentWindow.document.open();
+                iframe.contentWindow.document.write(finalHtml);
+                iframe.contentWindow.document.close();
+
+            } catch(e) {
+                console.error("Error AR:", e);
+                showDialog("S'ha produït un error al compilar l'entorn AR.");
+                closeARCamera(true);
+            }
         }
 
         function closeARCamera(skipNextStep = false) {
-            arScanActive = false;
-            if (currentVideoStream) {
-                currentVideoStream.getTracks().forEach(track => track.stop());
-                currentVideoStream = null;
-            }
             document.getElementById('ar-fullscreen-container').classList.add('hidden');
+            document.getElementById('ar-scan-ui').innerHTML = ''; 
             document.getElementById('ar-content-overlay').innerHTML = ''; 
             
             if (!skipNextStep && state.view === 'play') {
