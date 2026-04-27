@@ -349,7 +349,7 @@
                     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
                         <div class="flex items-center gap-2 cursor-pointer" onclick="navigateTo('home')">
                             <i class="ph-fill ph-map-trifold text-3xl"></i>
-                            <h1 class="text-xl font-bold tracking-wide">RutaViva 2.6</h1>
+                            <h1 class="text-xl font-bold tracking-wide">RutaViva 2.7</h1>
                         </div>
                         <nav>
                             <button onclick="navigateTo('home')" class="p-2 hover:bg-emerald-700 rounded-full transition" title="Inici">
@@ -558,11 +558,11 @@
             } else if (step.type === 'info') {
                 contentHtml = `<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4">${mediaHtml}<p class="text-slate-700 text-sm">${step.content}</p></div><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Passaria a la següent activitat.')" class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Següent</button>`;
             } else if (step.type === 'quiz') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.map(o=>`<button onclick="showDialog('S\\'ha seleccionat l\\'opció: ${o}')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4">${mediaHtml}<h3 class="font-bold text-sm mb-3">${step.question}</h3><div class="space-y-2">${step.options.map(o=>`<button onclick="showDialog('S\\'ha seleccionat l\\'opció: ${o}')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
             } else if (step.type === 'question') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4 text-sm" placeholder="Escriu aquí..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Comprovaria si el text introduït coincideix amb alguna de les respostes vàlides.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Enviar</button></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4">${mediaHtml}<h3 class="font-bold text-sm mb-3">${step.question}</h3><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4 text-sm" placeholder="Escriu aquí..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Comprovaria si el text introduït coincideix amb alguna de les respostes vàlides.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Enviar</button></div>`;
             } else if (step.type === 'mission') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h2 class="font-bold text-sm mb-2">Missió</h2><p class="mb-4 text-xs">${step.instruction}</p>${mediaHtml}<textarea class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" rows="2"></textarea><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Es registraria la resposta de la missió com a completada.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Completar</button></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h2 class="font-bold text-sm mb-2">Missió</h2>${mediaHtml}<p class="mb-4 text-xs">${step.instruction}</p><textarea class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" rows="2"></textarea><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Es registraria la resposta de la missió com a completada.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Completar</button></div>`;
             } else if (step.type === 'sort') {
                 if (!state.previewSortOrder || state.previewSortOrder.__id !== state.previewStepIndex) {
                     let arr = [...step.correctOrder];
@@ -577,7 +577,7 @@
                     state.previewSortOrder.__id = state.previewStepIndex;
                 }
                 
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.instruction}</h3>${mediaHtml}
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4">${mediaHtml}<h3 class="font-bold text-sm mb-3">${step.instruction}</h3>
                     <div class="flex flex-col gap-2 mt-4">
                         ${state.previewSortOrder.map((item, i) => `
                             <div draggable="true" ondragstart="window.dragSortStart(event, ${i})" ondragover="window.dragSortOver(event)" ondrop="window.dragSortDrop(event, ${i})" class="flex items-center gap-3 bg-white p-3 border-2 border-slate-200 rounded-xl cursor-move touch-none">
@@ -588,13 +588,13 @@
                     </div>
                     <button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això verificaria si heu col·locat correctament els elements (mitjançant arrossegament drag & drop).')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mt-4">Comprovar Ordre</button></div>`;
             } else if (step.type === 'ar_exp') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase mb-2 block">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p>${mediaHtml}<img id="media-continue-btn" src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button onclick="showDialog('Aquí s\\'obriria la càmera per buscar la imatge d\\'activació.')" class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase mb-2 block">Realitat Augmentada</span>${mediaHtml}<p class="text-xs font-semibold mb-4">${step.instruction}</p><img id="media-continue-btn" src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button onclick="showDialog('Aquí s\\'obriria la càmera per buscar la imatge d\\'activació.')" class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
             } else if (step.type === 'find_spot') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p>${mediaHtml}<div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button onclick="showDialog('Comprovaria la posició de la persona usuària mitjançant la geolocalització del mòbil.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div>${mediaHtml}<p class="text-xs font-semibold mb-4">${step.locationHint}</p><div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button onclick="showDialog('Comprovaria la posició de la persona usuària mitjançant la geolocalització del mòbil.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
             } else if (step.type === 'scan_code') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això compararia el text introduït amb el codi exacte de validació.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div>${mediaHtml}<p class="text-xs font-semibold mb-4">${step.instruction}</p><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això compararia el text introduït amb el codi exacte de validació.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
             } else if (step.type === 'survey') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.filter(o=>o).map(o=>`<button onclick="showDialog('L\\'opció escollida seria registrada per a la posterior avaluació.')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4">${mediaHtml}<h3 class="font-bold text-sm mb-3">${step.question}</h3><div class="space-y-2">${step.options.filter(o=>o).map(o=>`<button onclick="showDialog('L\\'opció escollida seria registrada per a la posterior avaluació.')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
             }
 
             return `
@@ -988,10 +988,10 @@
                     mainContent = `<div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">${media}<p class="text-lg text-slate-700 leading-relaxed">${step.content}</p></div>
                         <button id="media-continue-btn" ${hideBtnStyle} onclick="nextStep()" class="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg mt-6">Següent</button>`;
                 } else if (step.type === 'quiz') {
-                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200">${media}<h3 class="text-xl font-bold mb-6">${step.question}</h3>
                         <div class="space-y-3 mt-4">${step.options.map((o,i)=>`<button onclick="answerQuiz(${i})" class="w-full p-4 text-left border-2 rounded-2xl hover:border-purple-400 transition font-medium">${o}</button>`).join('')}</div></div>`;
                 } else if (step.type === 'question') {
-                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200">${media}<h3 class="text-xl font-bold mb-6">${step.question}</h3>
                         <input type="text" id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="Escriu aquí...">
                         <button id="media-continue-btn" ${hideBtnStyle} onclick="verifyText('question')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Enviar</button></div>`;
                 } else if (step.type === 'sort') {
@@ -1007,7 +1007,7 @@
                         state.playState.currentSortOrder = arr;
                     }
                     
-                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.instruction}</h3>${media}
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200">${media}<h3 class="text-xl font-bold mb-6">${step.instruction}</h3>
                         <div class="flex flex-col gap-2 mt-4">
                             ${state.playState.currentSortOrder.map((item, i) => `
                                 <div draggable="true" ondragstart="window.dragSortStart(event, ${i})" ondragover="window.dragSortOver(event)" ondrop="window.dragSortDrop(event, ${i})" class="flex items-center gap-3 bg-white p-4 border-2 border-slate-200 rounded-xl cursor-move hover:border-slate-300 transition touch-none">
@@ -1018,7 +1018,7 @@
                         </div>
                         <button id="media-continue-btn" ${hideBtnStyle} onclick="verifySort()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold mt-6 text-lg">Comprovar Ordre</button></div>`;
                 } else if (step.type === 'mission') {
-                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h2 class="font-bold mb-4">Missió</h2><p class="mb-6">${step.instruction}</p>${media}
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200">${media}<h2 class="font-bold mb-4">Missió</h2><p class="mb-6">${step.instruction}</p>
                         <textarea id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-4" rows="4"></textarea>
                         <button id="media-continue-btn" ${hideBtnStyle} onclick="verifyText('mission')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Completar Missió</button></div>`;
                 } else if (step.type === 'ar_exp') {
@@ -1034,8 +1034,8 @@
                                 <i class="ph-fill ${mediaIcon} text-3xl"></i>
                             </div>
                             <span class="text-xs font-bold text-teal-500 uppercase tracking-widest mb-2 block">Experiència de Realitat Augmentada</span>
-                            <p class="text-lg font-semibold text-slate-800 mb-6">${step.instruction}</p>
                             ${media}
+                            <p class="text-lg font-semibold text-slate-800 mb-6">${step.instruction}</p>
                             <div class="mb-6 relative inline-block">
                                 <span class="text-xs font-bold text-slate-400 mb-2 block">Imatge de Referència que heu de trobar i enfocar</span>
                                 <img src="${step.triggerImageB64 || defaultB64}" class="max-h-48 rounded-xl border-4 border-slate-100 mx-auto shadow-sm" onerror="this.style.display='none'">
@@ -1050,14 +1050,14 @@
                     mainContent = `
                         <div class="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200 mb-8 fade-in text-center">
                             <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><i class="ph-fill ph-qr-code text-3xl"></i></div>
+                            ${media}
                             <h3 class="text-xl font-bold mb-6">Codi de Validació</h3>
                             <p class="text-slate-600 mb-6">${step.instruction}</p>
-                            ${media}
                             <input type="text" id="playInput" class="w-full text-center text-xl font-mono uppercase tracking-widest p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="CODI...">
                             <button id="media-continue-btn" ${hideBtnStyle} onclick="verifyText('scan_code')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Validar <i class="ph-bold ph-check"></i></button>
                         </div>`;
                 } else if (step.type === 'survey') {
-                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
+                    mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200">${media}<h3 class="text-xl font-bold mb-6">${step.question}</h3>
                         <div class="space-y-3 mt-4">${step.options.filter(opt=>opt.trim()!=='').map((o,i)=>`<button onclick="answerSurvey()" class="w-full p-4 text-left border-2 rounded-2xl hover:border-pink-400 transition font-medium">${o}</button>`).join('')}</div></div>`;
                 }
             }
