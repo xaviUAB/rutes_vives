@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ca">º
+<html lang="ca">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -168,7 +168,7 @@
             previewStepIndex: 0,
             tours: [],
             draftTour: { id: null, title: '', description: '', steps: [], trackingUrl: '', accessType: 'free' },
-            playState: { tourId: null, currentStep: 0, score: 0, maxScore: 0, attempts: {}, feedbackMsg: null, feedbackType: null, geoVerified: false, stepStartTime: null, interactionLogs: [], currentSortOrder: null },
+            playState: { tourId: null, currentStep: 0, score: 0, maxScore: 0, attempts: {}, completedSteps: {}, feedbackMsg: null, feedbackType: null, geoVerified: false, stepStartTime: null, interactionLogs: [], currentSortOrder: null },
             modalState: { isOpen: false, type: null, editIndex: null, tempQuizOptions: [], tempQuizCorrect: 0, tempValues: {} },
             dialogState: { isOpen: false, message: '', type: 'alert', onConfirm: null, placeholder: '' }
         };
@@ -349,7 +349,7 @@
                     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
                         <div class="flex items-center gap-2 cursor-pointer" onclick="navigateTo('home')">
                             <i class="ph-fill ph-map-trifold text-3xl"></i>
-                            <h1 class="text-xl font-bold tracking-wide">RutaViva 2.5</h1>
+                            <h1 class="text-xl font-bold tracking-wide">RutaViva 2.6</h1>
                         </div>
                         <nav>
                             <button onclick="navigateTo('home')" class="p-2 hover:bg-emerald-700 rounded-full transition" title="Inici">
@@ -832,6 +832,7 @@
                 <div class="mb-4"><label class="block font-bold">Títol / Instruccions</label><input type="text" id="modalInput1" value="${editData.instruction||''}" class="w-full p-3 border rounded-xl" placeholder="Ex: Visiteu la web"></div>
                 <div class="mb-4"><label class="block font-bold">Descripció (Clicable)</label><textarea id="modalInput2" rows="3" class="w-full p-3 border rounded-xl" placeholder="Aquest text serà l'enllaç...">${editData.content||''}</textarea></div>
                 <div class="mb-4"><label class="block font-bold">Enllaç (URL)</label><input type="text" id="modalInput3" value="${editData.url||''}" class="w-full p-3 border rounded-xl" placeholder="www.exemple.cat"></div>
+                <div class="mb-4"><label class="block font-bold">Punts per visitar la web</label><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-3 border rounded-xl"></div>
                 ${mediaHtml}`;
             } else if (type === 'info') {
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Text Informatiu</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.content||''}</textarea></div>${mediaHtml}`;
@@ -922,16 +923,27 @@
             `;
         }
 
+        function getStepMaxScore(step) {
+            if (['quiz', 'question', 'sort', 'ar_exp', 'web'].includes(step.type)) return (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
+            if (['mission', 'survey'].includes(step.type)) return 5;
+            return 0;
+        }
+
         function renderPlay() {
             const tour = state.tours.find(t => t.id === state.playState.tourId);
             const step = tour && tour.steps ? tour.steps[state.playState.currentStep] : null;
             if (!step) return '<div class="p-8 text-center text-slate-500">No s\'ha pogut carregar l\'activitat.</div>';
             const progress = (state.playState.currentStep / tour.steps.length) * 100;
+            
+            const maxScoreSoFar = tour.steps.slice(0, state.playState.currentStep + 1).reduce((acc, s) => acc + getStepMaxScore(s), 0);
 
             let mainContent = '';
             
             const isMediaRestricted = (step.mediaType === 'video' || step.mediaType === 'audio') && !getEmbedUrl(step.mediaUrl).includes('embed');
             const hideBtnStyle = isMediaRestricted ? 'style="display:none"' : '';
+
+            // Resoldre correctament si l'activitat és obligatòria amb garantia per rutes antigues on pugui estar indefinit (undefined = true, excepte AR)
+            const isRequired = step.requireCorrect !== undefined ? step.requireCorrect : (step.type !== 'ar_exp');
 
             if ((step.hasGeo || step.type === 'find_spot') && !state.playState.geoVerified) {
                 mainContent = `
@@ -954,7 +966,7 @@
                             <p class="text-xl font-bold">${state.playState.feedbackMsg}</p>
                         </div>
                         <div class="flex flex-col gap-3">
-                            ${isSuccess || !step.requireCorrect ? `<button onclick="nextStep()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Continuar <i class="ph-bold ph-arrow-right"></i></button>` : ''}
+                            ${isSuccess || !isRequired ? `<button onclick="nextStep()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Continuar <i class="ph-bold ph-arrow-right"></i></button>` : ''}
                             ${!isSuccess ? `<button onclick="retryStep()" class="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold">Tornar a provar</button>` : ''}
                         </div>
                     </div>
@@ -965,7 +977,7 @@
                     mainContent = `<div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
                         ${media}
                         <h3 class="text-2xl font-bold mb-4 text-slate-800">${step.instruction || 'Recurs Web'}</h3>
-                        <div onclick="window.open('${step.url}', '_blank')" class="cursor-pointer bg-blue-50 hover:bg-blue-100 border border-blue-200 p-6 rounded-2xl transition transform hover:scale-105 shadow-sm mb-6">
+                        <div onclick="visitWebLink('${step.url}')" class="cursor-pointer bg-blue-50 hover:bg-blue-100 border border-blue-200 p-6 rounded-2xl transition transform hover:scale-105 shadow-sm mb-6">
                             <i class="ph-duotone ph-link text-4xl text-blue-500 mb-3"></i>
                             <p class="text-lg text-blue-800 font-medium leading-relaxed">${step.content || "Feu clic aquí per obrir l'enllaç"}</p>
                         </div>
@@ -1062,7 +1074,10 @@
                                     <span>${tour.title}</span>
                                     <span>Pas ${state.playState.currentStep + 1}/${tour.steps.length}</span>
                                 </div>
-                                <div class="w-full bg-slate-200 rounded-full h-2"><div class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: ${progress}%"></div></div>
+                                <div class="flex items-center gap-3">
+                                    <div class="w-full bg-slate-200 rounded-full h-2 flex-grow"><div class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: ${progress}%"></div></div>
+                                    <span class="text-xs font-bold text-slate-500 whitespace-nowrap" title="Punts aconseguits / Punts possibles fins ara">${state.playState.score} / ${maxScoreSoFar} <i class="ph-bold ph-star text-yellow-500"></i></span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1213,57 +1228,6 @@
         
         function closeModal() { if (mapInstance) { mapInstance.remove(); mapInstance = null; } state.modalState.isOpen = false; renderModal(); }
 
-        window.syncModalState = function() {
-            if (!state.modalState.tempValues) state.modalState.tempValues = {};
-            const container = document.getElementById('modal-container');
-            if (!container) return;
-            
-            // Sincronitza l'opció correcta per evitar col·lisions
-            const correctRadio = container.querySelector('input[name="correctOpt"]:checked');
-            if (correctRadio) state.modalState.tempQuizCorrect = parseInt(correctRadio.value);
-
-            const inputs = container.querySelectorAll('input, textarea, select');
-            inputs.forEach(el => {
-                // Ignorem els elements dinàmics de la llista (opt0, opt1...) ja que els gestionem a sota
-                if (el.id && !el.id.startsWith('opt') && el.name !== 'correctOpt') {
-                    if (el.type === 'checkbox' || el.type === 'radio') {
-                        state.modalState.tempValues[el.id] = el.checked;
-                    } else {
-                        state.modalState.tempValues[el.id] = el.value;
-                    }
-                }
-            });
-            
-            const list = document.getElementById('quizOptionsList');
-            if (list) {
-                const opts = list.querySelectorAll('input[type="text"]');
-                state.modalState.tempQuizOptions = Array.from(opts).map(o => o.value);
-            }
-        };
-
-        function renderModal() {
-            const container = document.getElementById('modal-container');
-            if (state.view === 'create' && state.modalState.isOpen) {
-                container.innerHTML = renderDynamicModal();
-                const geoPanelEl = document.getElementById('geoControlPanel');
-                if (state.modalState.type === 'find_spot' || (geoPanelEl && geoPanelEl.style.display !== 'none')) {
-                    setTimeout(initMapForCreation, 200);
-                }
-                setTimeout(() => {
-                    if (state.modalState.tempValues) {
-                        Object.keys(state.modalState.tempValues).forEach(key => {
-                            const el = document.getElementById(key);
-                            if (el) {
-                                if (el.type === 'checkbox' || el.type === 'radio') el.checked = state.modalState.tempValues[key];
-                                else el.value = state.modalState.tempValues[key];
-                                if (el.id === 'modalMediaSelect') el.dispatchEvent(new Event('change'));
-                            }
-                        });
-                    }
-                }, 10);
-            } else { container.innerHTML = ''; }
-        }
-
         function saveStepFromModal() {
             const type = state.modalState.type;
             const editIndex = state.modalState.editIndex;
@@ -1287,6 +1251,8 @@
                     urlVal = 'https://' + urlVal;
                 }
                 stepData.url = urlVal;
+                let s1 = parseInt(document.getElementById('modalScore1')?.value);
+                stepData.scoreFirstTry = isNaN(s1) ? 10 : s1;
             } else if (type === 'info') {
                 stepData.content = v1;
             } else if (type === 'quiz') {
@@ -1534,7 +1500,7 @@
                     return showDialog("Aquesta ruta està restringida però no té cap servidor configurat per validar l'accés. Modifiqueu l'experiència per incloure la URL.", "alert");
                 }
                 
-                showDialog("Aquesta experiència és privada. Introdueix el codi per començar:", "prompt", (code) => {
+                showDialog("Aquesta experiència és privada. Introduïu el codi per començar:", "prompt", (code) => {
                     if (!code) return;
                     
                     const btnContainer = document.getElementById('dialogButtonsContainer');
@@ -1576,13 +1542,10 @@
                 return;
             }
             
-            const maxScore = tour.steps.reduce((acc, step) => {
-                if (['quiz', 'question', 'sort', 'ar_exp'].includes(step.type)) return acc + (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
-                return acc;
-            }, 0);
+            const maxScore = tour.steps.reduce((acc, step) => acc + getStepMaxScore(step), 0);
             
             const initPlay = () => {
-                state.playState = { tourId: id, currentStep: startStepIndex, score: 0, attempts: {}, feedbackMsg: null, geoVerified: false, maxScore: maxScore, stepStartTime: Date.now(), interactionLogs: [], currentSortOrder: null };
+                state.playState = { tourId: id, currentStep: startStepIndex, score: 0, attempts: {}, completedSteps: {}, feedbackMsg: null, geoVerified: false, maxScore: maxScore, stepStartTime: Date.now(), interactionLogs: [], currentSortOrder: null };
                 navigateTo('play');
             };
 
@@ -1598,11 +1561,34 @@
             startTour(id, i);
         }
 
+        window.visitWebLink = function(url) {
+            const stepIndex = state.playState.currentStep;
+            const step = state.tours.find(t=>t.id===state.playState.tourId).steps[stepIndex];
+            
+            if (!state.playState.completedSteps) state.playState.completedSteps = {};
+            if (!state.playState.completedSteps[stepIndex]) {
+                const scoreToAdd = step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10;
+                state.playState.score += scoreToAdd;
+                state.playState.completedSteps[stepIndex] = true;
+                logInteraction('Visita Web', url, state.playState.score);
+                renderView();
+            }
+            window.open(url, '_blank');
+        };
+
         function answerQuiz(i) {
             const step = state.tours.find(t=>t.id===state.playState.tourId).steps[state.playState.currentStep];
             if (!state.playState.attempts) state.playState.attempts = {};
             const stepIndex = state.playState.currentStep;
             if (state.playState.attempts[stepIndex] === undefined) state.playState.attempts[stepIndex] = 0;
+            
+            if (!state.playState.completedSteps) state.playState.completedSteps = {};
+            if (state.playState.completedSteps[stepIndex]) {
+                state.playState.feedbackMsg = step.successMsg || "Ja havíeu completat aquesta activitat.";
+                state.playState.feedbackType = 'success';
+                renderView();
+                return;
+            }
             
             const isFirstTry = state.playState.attempts[stepIndex] === 0;
             state.playState.attempts[stepIndex]++;
@@ -1610,6 +1596,7 @@
             if (i === step.correct) { 
                 const scoreToAdd = isFirstTry ? (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10) : (step.scoreNextTries !== undefined ? step.scoreNextTries : 5);
                 state.playState.score += scoreToAdd;
+                state.playState.completedSteps[stepIndex] = true;
                 state.playState.feedbackMsg = step.successMsg || "Correcte!"; 
                 state.playState.feedbackType = 'success'; 
             } else { 
@@ -1627,6 +1614,15 @@
             if (!state.playState.attempts) state.playState.attempts = {};
             const stepIndex = state.playState.currentStep;
             if (state.playState.attempts[stepIndex] === undefined) state.playState.attempts[stepIndex] = 0;
+            
+            if (!state.playState.completedSteps) state.playState.completedSteps = {};
+            if (state.playState.completedSteps[stepIndex]) {
+                state.playState.feedbackMsg = "Ja havíeu completat aquesta activitat.";
+                state.playState.feedbackType = 'success';
+                renderView();
+                return;
+            }
+
             const isFirstTry = state.playState.attempts[stepIndex] === 0;
             state.playState.attempts[stepIndex]++;
 
@@ -1634,6 +1630,7 @@
                 if (step.validAnswers.includes(input)) { 
                     const scoreToAdd = isFirstTry ? (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10) : (step.scoreNextTries !== undefined ? step.scoreNextTries : 5);
                     state.playState.score += scoreToAdd;
+                    state.playState.completedSteps[stepIndex] = true;
                     state.playState.feedbackMsg = step.successMsg || "Molt bé!"; 
                     state.playState.feedbackType = 'success'; 
                 } else { 
@@ -1642,6 +1639,7 @@
                 }
             } else if (type === 'scan_code') {
                 if (input === step.code.toLowerCase()) {
+                    state.playState.completedSteps[stepIndex] = true;
                     state.playState.feedbackMsg = "Codi validat correctament!";
                     state.playState.feedbackType = 'success';
                 } else {
@@ -1650,6 +1648,7 @@
                 }
             } else { 
                 state.playState.score += 5; 
+                state.playState.completedSteps[stepIndex] = true;
                 state.playState.feedbackMsg = "Missió completada."; 
                 state.playState.feedbackType = 'success'; 
             }
@@ -1665,12 +1664,22 @@
             if (!state.playState.attempts) state.playState.attempts = {};
             const stepIndex = state.playState.currentStep;
             if (state.playState.attempts[stepIndex] === undefined) state.playState.attempts[stepIndex] = 0;
+            
+            if (!state.playState.completedSteps) state.playState.completedSteps = {};
+            if (state.playState.completedSteps[stepIndex]) {
+                state.playState.feedbackMsg = "Ja havíeu completat aquesta activitat.";
+                state.playState.feedbackType = 'success';
+                renderView();
+                return;
+            }
+
             const isFirstTry = state.playState.attempts[stepIndex] === 0;
             state.playState.attempts[stepIndex]++;
 
             if (isCorrect) {
                 const scoreToAdd = isFirstTry ? (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10) : (step.scoreNextTries !== undefined ? step.scoreNextTries : 5);
                 state.playState.score += scoreToAdd;
+                state.playState.completedSteps[stepIndex] = true;
                 state.playState.feedbackMsg = "Ordre correcte! Molt bé.";
                 state.playState.feedbackType = 'success';
             } else {
@@ -1682,10 +1691,15 @@
         }
 
         function answerSurvey() {
-            state.playState.score += 5;
+            const stepIndex = state.playState.currentStep;
+            if (!state.playState.completedSteps) state.playState.completedSteps = {};
+            if (!state.playState.completedSteps[stepIndex]) {
+                state.playState.score += 5;
+                state.playState.completedSteps[stepIndex] = true;
+            }
             state.playState.feedbackMsg = "L'opció s'ha registrat correctament. Gràcies per participar!";
             state.playState.feedbackType = 'success';
-            logInteraction('Enquesta', 'Completada', 5);
+            logInteraction('Enquesta', 'Completada', state.playState.score);
             renderView();
         }
 
@@ -2263,6 +2277,10 @@
                             if (!state.playState.attempts) state.playState.attempts = {};
                             if (!state.playState.attempts[stepIndex]) {
                                 state.playState.attempts[stepIndex] = 1;
+                            }
+                            if (!state.playState.completedSteps) state.playState.completedSteps = {};
+                            if (!state.playState.completedSteps[stepIndex]) {
+                                state.playState.completedSteps[stepIndex] = true;
                                 state.playState.score += (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
                                 logInteraction('AR Completada', 'Imatge Detectada', state.playState.score);
                             }
@@ -2361,6 +2379,7 @@
         window.closeARCamera = closeARCamera;
         window.skipARActivity = skipARActivity;
         window.syncModalState = syncModalState;
+        window.visitWebLink = visitWebLink;
     </script>
 </body>
 </html>
