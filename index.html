@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ca">
+<html lang="ca">º
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -91,36 +91,50 @@
     </div>
 
     <script>
-        // Substituïu aquesta URL per la del vostre Google Apps Script que actua de catàleg
         const GLOBAL_CATALOG_URL = "https://script.google.com/macros/s/AKfycbw7_V0bW_fqNXoFf9hPpwBDKEXZMT735ulmCVp9HegUZ69W5_7FvgjQ8FtJG3g6izc/exec";
-
-        // Transparent 1x1 pixel base64 for default placeholder
         const defaultB64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
-        function getEmbedUrl(u) { if (!u) return ''; if (u.includes('youtube.com/watch?v=')) return `https://www.youtube.com/embed/${new URL(u).searchParams.get('v')}`; if (u.includes('youtu.be/')) return `https://www.youtube.com/embed/${u.split('youtu.be/')[1]}`; return u; }
+        function getEmbedUrl(u) { 
+            if (!u) return ''; 
+            if (u.includes('youtube.com/watch?v=')) return `https://www.youtube.com/embed/${new URL(u).searchParams.get('v')}`; 
+            if (u.includes('youtu.be/')) return `https://www.youtube.com/embed/${u.split('youtu.be/')[1]}`; 
+            const driveRegex = /(?:https:\/\/)?(?:drive\.google\.com\/)(?:file\/d\/|open\?id=)([\w-]+)/;
+            const driveMatch = u.match(driveRegex);
+            if (driveMatch && driveMatch[1]) return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+            return u; 
+        }
+
+        // Funció per habilitar el botó de continuació quan acaba un mèdia
+        window.enableContinueButton = function() {
+            const btn = document.getElementById('media-continue-btn');
+            if (btn) {
+                btn.style.display = 'block';
+                btn.classList.add('fade-in');
+            }
+        };
 
         function renderMedia(step) {
             if (!step.mediaType || step.mediaType === 'none' || !step.mediaUrl) return '';
             
-            const isDark = step.type === 'stage';
-            const borderColor = isDark ? 'border-slate-600' : 'border-slate-200';
-            const bgColor = isDark ? 'bg-slate-700' : 'bg-slate-50';
-            const textColor = isDark ? 'text-emerald-400' : 'text-slate-500';
+            const isDark = step.type === 'web';
+            const borderColor = isDark ? 'border-blue-200' : 'border-slate-200';
+            const bgColor = isDark ? 'bg-blue-50' : 'bg-slate-50';
+            const textColor = isDark ? 'text-blue-500' : 'text-slate-500';
 
             if (step.mediaType === 'image') {
                 return `<img src="${step.mediaUrl}" class="w-full h-auto max-h-64 object-cover rounded-xl mb-6 shadow-sm border ${borderColor}" onerror="this.style.display='none'">`;
             } else if (step.mediaType === 'video') {
                 const embedUrl = getEmbedUrl(step.mediaUrl);
-                if (embedUrl.includes('youtube') || embedUrl.includes('vimeo')) {
-                    return `<div class="video-container mb-6 shadow-sm border ${borderColor} rounded-xl overflow-hidden"><iframe src="${embedUrl}" frameborder="0" allowfullscreen></iframe></div>`;
+                if (embedUrl.includes('youtube') || embedUrl.includes('vimeo') || embedUrl.includes('drive.google')) {
+                    return `<div class="video-container mb-6 shadow-sm border ${borderColor} rounded-xl overflow-hidden"><iframe src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`;
                 } else {
-                    return `<video src="${step.mediaUrl}" controls class="w-full max-h-64 rounded-xl mb-6 bg-black shadow-sm border ${borderColor}"></video>`;
+                    return `<video src="${step.mediaUrl}" controls onended="window.enableContinueButton()" class="w-full max-h-64 rounded-xl mb-6 bg-black shadow-sm border ${borderColor}"></video>`;
                 }
             } else if (step.mediaType === 'audio') {
                 return `
                     <div class="${bgColor} border ${borderColor} p-4 rounded-xl mb-6 flex flex-col items-center gap-3 w-full shadow-sm">
                         <i class="ph-duotone ph-headphones text-4xl ${textColor}"></i>
-                        <audio src="${step.mediaUrl}" controls class="w-full outline-none"></audio>
+                        <audio src="${step.mediaUrl}" controls onended="window.enableContinueButton()" class="w-full outline-none"></audio>
                     </div>
                 `;
             } else if (step.mediaType === '3d') {
@@ -155,38 +169,104 @@
             tours: [],
             draftTour: { id: null, title: '', description: '', steps: [], trackingUrl: '', accessType: 'free' },
             playState: { tourId: null, currentStep: 0, score: 0, maxScore: 0, attempts: {}, feedbackMsg: null, feedbackType: null, geoVerified: false, stepStartTime: null, interactionLogs: [], currentSortOrder: null },
-            modalState: { isOpen: false, type: null, editIndex: null, tempQuizOptions: [], tempQuizCorrect: 0 },
+            modalState: { isOpen: false, type: null, editIndex: null, tempQuizOptions: [], tempQuizCorrect: 0, tempValues: {} },
             dialogState: { isOpen: false, message: '', type: 'alert', onConfirm: null, placeholder: '' }
+        };
+
+        window.saveStateToSession = function() {
+            try {
+                const stateToSave = {
+                    view: state.view,
+                    playState: state.playState,
+                    draftTour: state.draftTour,
+                    previewStepIndex: state.previewStepIndex,
+                    tours: state.tours
+                };
+                const jsonStr = JSON.stringify(stateToSave);
+                sessionStorage.setItem('rutaviva_state', jsonStr);
+                localStorage.setItem('rutaviva_state_backup', jsonStr);
+            } catch(e) {}
+        };
+
+        window.loadStateFromSession = function() {
+            try {
+                let saved = sessionStorage.getItem('rutaviva_state');
+                if (!saved) saved = localStorage.getItem('rutaviva_state_backup');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    state.view = parsed.view || 'home';
+                    state.playState = parsed.playState || state.playState;
+                    state.draftTour = parsed.draftTour || state.draftTour;
+                    state.previewStepIndex = parsed.previewStepIndex || 0;
+                    if (parsed.tours && Array.isArray(parsed.tours)) {
+                        state.tours = parsed.tours;
+                    }
+                }
+            } catch (e) {}
         };
 
         function loadToursFromCatalog() {
             if (!GLOBAL_CATALOG_URL || window.isAutonomous) return;
             
             fetch(GLOBAL_CATALOG_URL + "?action=getCatalog")
-                .then(res => res.json())
-                .then(data => {
-                    if (data.urls && data.urls.length > 0) {
-                        let carregades = 0;
-                        data.urls.forEach(url => {
-                            fetch(url)
-                                .then(r => r.json())
-                                .then(tourData => {
-                                    const toursToImport = Array.isArray(tourData) ? tourData : [tourData];
-                                    toursToImport.forEach(impTour => {
-                                        if(impTour.id && impTour.title && Array.isArray(impTour.steps)) {
-                                            const idx = state.tours.findIndex(t => t.id === impTour.id);
-                                            if (idx >= 0) state.tours[idx] = impTour;
-                                            else state.tours.push(impTour);
-                                            carregades++;
+                .then(res => res.text()) 
+                .then(text => {
+                    if (!text) return;
+                    try {
+                        const data = JSON.parse(text);
+                        if (data.urls && data.urls.length > 0) {
+                            let carregades = 0;
+                            data.urls.forEach(url => {
+                                fetch(url)
+                                    .then(r => r.text())
+                                    .then(tourText => {
+                                        if(!tourText) return;
+                                        try {
+                                            const tourData = JSON.parse(tourText);
+                                            const toursToImport = Array.isArray(tourData) ? tourData : [tourData];
+                                            toursToImport.forEach(impTour => {
+                                                if(impTour.id && impTour.title && Array.isArray(impTour.steps)) {
+                                                    const idx = state.tours.findIndex(t => t.id === impTour.id);
+                                                    if (idx >= 0) state.tours[idx] = impTour;
+                                                    else state.tours.push(impTour);
+                                                    carregades++;
+                                                }
+                                            });
+                                            if(carregades > 0) renderView();
+                                        } catch(e) {
+                                            console.warn("JSON invàlid al recurs:", url);
                                         }
-                                    });
-                                    if(carregades > 0) renderView();
-                                })
-                                .catch(e => console.warn("No s'ha pogut carregar la ruta des de la URL: " + url));
-                        });
+                                    })
+                                    .catch(e => console.warn("Error de xarxa en carregar la ruta des de la URL: " + url));
+                            });
+                        }
+                    } catch(e) {
+                        console.warn("La resposta del catàleg no és un format vàlid.");
                     }
                 })
-                .catch(e => console.warn("Error en connectar amb el catàleg de rutes de Google Sheets."));
+                .catch(e => console.warn("Error en connectar amb el catàleg de rutes."));
+        }
+
+        function importTours(e) { 
+            const f = e.target.files[0]; 
+            const reader = new FileReader(); 
+            reader.onload = ev => { 
+                try { 
+                    const imported = JSON.parse(ev.target.result); 
+                    let firstId = null;
+                    imported.forEach(t => {
+                        if (!firstId) firstId = t.id;
+                        const idx = state.tours.findIndex(existing => existing.id === t.id);
+                        if (idx >= 0) state.tours[idx] = t;
+                        else state.tours.push(t);
+                    });
+                    if (firstId) editTour(firstId);
+                    else navigateTo('home');
+                } catch(err) { 
+                    showDialog("Error JSON"); 
+                } 
+            }; 
+            reader.readAsText(f); 
         }
 
         window.importFolder = function(e) {
@@ -213,9 +293,7 @@
                                     }
                                 });
                             }
-                        } catch(err) {
-                            console.error("Error processant l'arxiu: " + file.name, err);
-                        }
+                        } catch(err) {}
                         checkComplete();
                     };
                     reader.readAsText(file);
@@ -241,11 +319,28 @@
         let arScanActive = false;
 
         window.onload = () => {
+            if (window.isAutonomous && window.AUTONOMOUS_TOUR) {
+                state.tours = [window.AUTONOMOUS_TOUR];
+                if (window.AUTONOMOUS_TOUR.accessType === 'restricted') {
+                    state.view = 'home';
+                    renderAll();
+                    checkTourAccess(window.AUTONOMOUS_TOUR.id);
+                } else {
+                    startTour(window.AUTONOMOUS_TOUR.id);
+                }
+                return;
+            }
+            window.loadStateFromSession();
             renderAll();
             loadToursFromCatalog();
         };
 
-        function renderAll() { renderView(); renderModal(); renderDialogUI(); }
+        function renderAll() { 
+            renderView(); 
+            renderModal(); 
+            renderDialogUI(); 
+            window.saveStateToSession(); 
+        }
 
         function renderView() {
             const appContainer = document.getElementById('app');
@@ -254,7 +349,7 @@
                     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
                         <div class="flex items-center gap-2 cursor-pointer" onclick="navigateTo('home')">
                             <i class="ph-fill ph-map-trifold text-3xl"></i>
-                            <h1 class="text-xl font-bold tracking-wide">RutaViva</h1>
+                            <h1 class="text-xl font-bold tracking-wide">RutaViva 2.5</h1>
                         </div>
                         <nav>
                             <button onclick="navigateTo('home')" class="p-2 hover:bg-emerald-700 rounded-full transition" title="Inici">
@@ -281,12 +376,41 @@
 
             if (state.view === 'play') {
                 const tour = state.tours.find(t => t.id === state.playState.tourId);
-                const step = tour.steps[state.playState.currentStep];
+                const step = tour?.steps ? tour.steps[state.playState.currentStep] : null;
                 if (step && (step.hasGeo || step.type === 'find_spot') && !state.playState.geoVerified && !state.playState.feedbackMsg) {
                     setTimeout(() => initMapForPlay(step.targetLat, step.targetLng, step.targetRadius || 30), 200);
                 }
             }
         }
+
+        // Funció afegida per sincronitzar i no perdre valors quan s'afegeix/treu un element de llista
+        window.syncModalState = function() {
+            if (!state.modalState.tempValues) state.modalState.tempValues = {};
+            const container = document.getElementById('modal-container');
+            if (!container) return;
+            
+            // Sincronitza l'opció correcta per evitar col·lisions
+            const correctRadio = container.querySelector('input[name="correctOpt"]:checked');
+            if (correctRadio) state.modalState.tempQuizCorrect = parseInt(correctRadio.value);
+
+            const inputs = container.querySelectorAll('input, textarea, select');
+            inputs.forEach(el => {
+                // Ignorem els elements dinàmics de la llista (opt0, opt1...) ja que els gestionem a sota
+                if (el.id && !el.id.startsWith('opt') && el.name !== 'correctOpt') {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        state.modalState.tempValues[el.id] = el.checked;
+                    } else {
+                        state.modalState.tempValues[el.id] = el.value;
+                    }
+                }
+            });
+            
+            const list = document.getElementById('quizOptionsList');
+            if (list) {
+                const opts = list.querySelectorAll('input[type="text"]');
+                state.modalState.tempQuizOptions = Array.from(opts).map(o => o.value);
+            }
+        };
 
         function renderModal() {
             const container = document.getElementById('modal-container');
@@ -296,6 +420,18 @@
                 if (state.modalState.type === 'find_spot' || (geoPanelEl && geoPanelEl.style.display !== 'none')) {
                     setTimeout(initMapForCreation, 200);
                 }
+                setTimeout(() => {
+                    if (state.modalState.tempValues) {
+                        Object.keys(state.modalState.tempValues).forEach(key => {
+                            const el = document.getElementById(key);
+                            if (el) {
+                                if (el.type === 'checkbox' || el.type === 'radio') el.checked = state.modalState.tempValues[key];
+                                else el.value = state.modalState.tempValues[key];
+                                if (el.id === 'modalMediaSelect') el.dispatchEvent(new Event('change'));
+                            }
+                        });
+                    }
+                }, 10);
             } else { container.innerHTML = ''; }
         }
 
@@ -405,16 +541,28 @@
             let mediaHtml = renderMedia(step);
             let contentHtml = '';
             
-            if (step.type === 'stage') {
-                contentHtml = `<div class="bg-slate-800 text-white p-6 rounded-2xl text-center border-4 border-slate-700 mb-4">${mediaHtml}<h2 class="text-2xl font-black uppercase">${step.title}</h2></div><button onclick="showDialog('Iniciaria l\\'etapa oficialment.')" class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Començar etapa</button>`;
+            // Comprovem si el botó s'ha d'amagar inicialment
+            const isMediaRestricted = (step.mediaType === 'video' || step.mediaType === 'audio') && !getEmbedUrl(step.mediaUrl).includes('embed');
+            const hideBtnStyle = isMediaRestricted ? 'style="display:none"' : '';
+
+            if (step.type === 'web') {
+                contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center mb-4">
+                    ${mediaHtml}
+                    <h3 class="font-bold text-sm mb-2">${step.instruction || 'Recurs Web'}</h3>
+                    <div onclick="showDialog('Obriria l\\'enllaç: ${step.url}')" class="cursor-pointer bg-blue-50 border border-blue-200 p-3 rounded-xl mb-4 transition hover:bg-blue-100">
+                        <i class="ph-duotone ph-link text-2xl text-blue-500 mb-1"></i>
+                        <p class="text-xs text-blue-800 font-medium line-clamp-2">${step.content || 'Clic per obrir'}</p>
+                    </div>
+                    <button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Avançaria a la següent activitat.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Continuar</button>
+                </div>`;
             } else if (step.type === 'info') {
-                contentHtml = `<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4">${mediaHtml}<p class="text-slate-700 text-sm">${step.content}</p></div><button onclick="showDialog('Passaria a la següent activitat.')" class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Següent</button>`;
+                contentHtml = `<div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-4">${mediaHtml}<p class="text-slate-700 text-sm">${step.content}</p></div><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Passaria a la següent activitat.')" class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold">Següent</button>`;
             } else if (step.type === 'quiz') {
                 contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.map(o=>`<button onclick="showDialog('S\\'ha seleccionat l\\'opció: ${o}')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
             } else if (step.type === 'question') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4 text-sm" placeholder="Escriu aquí..."><button onclick="showDialog('Comprovaria si el text introduït coincideix amb alguna de les respostes vàlides.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Enviar</button></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4 text-sm" placeholder="Escriu aquí..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Comprovaria si el text introduït coincideix amb alguna de les respostes vàlides.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Enviar</button></div>`;
             } else if (step.type === 'mission') {
-                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h2 class="font-bold text-sm mb-2">Missió</h2><p class="mb-4 text-xs">${step.instruction}</p>${mediaHtml}<textarea class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" rows="2"></textarea><button onclick="showDialog('Es registraria la resposta de la missió com a completada.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Completar</button></div>`;
+                contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h2 class="font-bold text-sm mb-2">Missió</h2><p class="mb-4 text-xs">${step.instruction}</p>${mediaHtml}<textarea class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" rows="2"></textarea><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Es registraria la resposta de la missió com a completada.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">Completar</button></div>`;
             } else if (step.type === 'sort') {
                 if (!state.previewSortOrder || state.previewSortOrder.__id !== state.previewStepIndex) {
                     let arr = [...step.correctOrder];
@@ -438,22 +586,34 @@
                             </div>
                         `).join('')}
                     </div>
-                    <button onclick="showDialog('Això verificaria si heu col·locat correctament els elements (mitjançant arrossegament drag & drop).')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mt-4">Comprovar Ordre</button></div>`;
+                    <button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això verificaria si heu col·locat correctament els elements (mitjançant arrossegament drag & drop).')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mt-4">Comprovar Ordre</button></div>`;
             } else if (step.type === 'ar_exp') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase block mb-2">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p><img src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button onclick="showDialog('Aquí s\\'obriria la càmera per buscar la imatge d\\'activació.')" class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase mb-2 block">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p><img id="media-continue-btn" src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button onclick="showDialog('Aquí s\\'obriria la càmera per buscar la imatge d\\'activació.')" class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
             } else if (step.type === 'find_spot') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p><div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button onclick="showDialog('Comprovaria la posició de l\\'usuari mitjançant la geolocalització del mòbil.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p><div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button onclick="showDialog('Comprovaria la posició de la persona usuària mitjançant la geolocalització del mòbil.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
             } else if (step.type === 'scan_code') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button onclick="showDialog('Això compararia el text introduït amb el codi exacte de validació.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això compararia el text introduït amb el codi exacte de validació.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
             } else if (step.type === 'survey') {
                  contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.filter(o=>o).map(o=>`<button onclick="showDialog('L\\'opció escollida seria registrada per a la posterior avaluació.')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
             }
 
             return `
                 <div class="p-4 pt-6 min-h-full flex flex-col pointer-events-auto">
-                    <div class="mb-4 pointer-events-none">
-                        <div class="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1"><span>${state.draftTour.title || 'Ruta sense títol'}</span><span>Pas ${state.previewStepIndex+1}/${state.draftTour.steps.length}</span></div>
-                        <div class="w-full bg-slate-200 rounded-full h-1"><div class="bg-emerald-500 h-1 rounded-full" style="width: ${((state.previewStepIndex)/state.draftTour.steps.length)*100}%"></div></div>
+                    <div class="mb-4">
+                        <div class="flex items-center gap-2 mb-1">
+                            ${state.previewStepIndex > 0 ? `
+                                <button onclick="setPreviewStep(${state.previewStepIndex - 1})" class="w-6 h-6 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition pointer-events-auto">
+                                    <i class="ph ph-arrow-left text-xs"></i>
+                                </button>
+                            ` : '<div class="w-6"></div>'}
+                            <div class="flex-grow pointer-events-none">
+                                <div class="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
+                                    <span>${state.draftTour.title || 'Ruta sense títol'}</span>
+                                    <span>Pas ${state.previewStepIndex+1}/${state.draftTour.steps.length}</span>
+                                </div>
+                                <div class="w-full bg-slate-200 rounded-full h-1"><div class="bg-emerald-500 h-1 rounded-full" style="width: ${((state.previewStepIndex)/state.draftTour.steps.length)*100}%"></div></div>
+                            </div>
+                        </div>
                     </div>
                     ${contentHtml}
                 </div>
@@ -461,7 +621,7 @@
         }
 
         function renderCreate() {
-            let stepsHtml = state.draftTour.steps.length === 0 ? `<div class="text-center py-8 text-slate-400 bg-white rounded-xl border border-dashed border-slate-300">Utilitzeu els botons inferiors per afegir contingut.</div>` : 
+            let stepsHtml = state.draftTour.steps.length === 0 ? `<div class="text-center py-8 text-slate-400 bg-white rounded-xl border border-dashed border-slate-300">Utilitzeu els botons de l'esquerra per afegir contingut.</div>` : 
                 state.draftTour.steps.map((step, index) => {
                     const visuals = getVisualsForStepType(step.type);
                     const isSelected = state.previewStepIndex === index;
@@ -477,7 +637,7 @@
                                     <span class="text-[10px] font-bold text-slate-400 uppercase">Pas ${index + 1}</span>
                                     ${step.hasGeo ? `<span class="bg-red-100 text-red-600 text-[9px] px-1.5 py-0.5 rounded font-bold"><i class="ph-bold ph-map-pin"></i> GEOBLOCADA</span>` : ''}
                                 </div>
-                                <p class="font-bold text-slate-800 line-clamp-2 mt-2">${step.title || step.question || step.instruction || step.locationHint || 'Sense contingut principal'}</p>
+                                <p class="font-bold text-slate-800 line-clamp-2 mt-2">${step.title || step.instruction || step.question || step.locationHint || 'Sense contingut principal'}</p>
                             </div>
                             <div class="flex flex-col gap-1 items-center shrink-0">
                                 <button onclick="previewFromStep(${index})" class="text-emerald-500 hover:bg-emerald-50 p-1 rounded transition" title="Provar des d'aquí"><i class="ph-bold ph-play"></i></button>
@@ -492,30 +652,39 @@
 
             return `
                 <div class="w-full flex flex-col lg:flex-row gap-6">
-                    <div class="flex-grow max-w-3xl w-full mx-auto">
-                        <div class="mb-6 flex justify-between items-center">
-                            <h2 class="text-2xl font-bold text-slate-800">Editor de Ruta</h2>
-                            <button onclick="openModal('save_tour')" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition text-sm">Desar Ruta</button>
-                        </div>
-                        <div class="bg-slate-100 p-6 rounded-2xl border border-slate-200 mb-6">
-                            <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="ph-fill ph-map-pin-line text-emerald-600"></i> Estructura Temporal</h3>
-                            <div class="mb-6 max-h-[600px] overflow-y-auto pr-2 no-scrollbar">${stepsHtml}</div>
-                            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-4 border-t border-slate-200">
-                                <button onclick="openModal('stage')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-slate-50 transition text-xs font-medium"><i class="ph ph-flag text-2xl mb-1 text-slate-500"></i> Etapa</button>
-                                <button onclick="openModal('info')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-blue-50 transition text-xs font-medium"><i class="ph ph-info text-2xl mb-1 text-blue-500"></i> Info</button>
-                                <button onclick="openModal('quiz')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-purple-50 transition text-xs font-medium"><i class="ph ph-list-checks text-2xl mb-1 text-purple-500"></i> Test</button>
-                                <button onclick="openModal('question')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-indigo-50 transition text-xs font-medium"><i class="ph ph-question text-2xl mb-1 text-indigo-500"></i> Pregunta</button>
-                                <button onclick="openModal('sort')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-yellow-50 transition text-xs font-medium"><i class="ph ph-list-numbers text-2xl mb-1 text-yellow-500"></i> Ordenar</button>
-                                <button onclick="openModal('mission')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-orange-50 transition text-xs font-medium"><i class="ph ph-warning-circle text-2xl mb-1 text-orange-500"></i> Missió</button>
-                                <button onclick="openModal('find_spot')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-red-50 transition text-xs font-medium"><i class="ph ph-map-pin text-2xl mb-1 text-red-500"></i> Lloc GPS</button>
-                                <button onclick="openModal('scan_code')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-emerald-50 transition text-xs font-medium"><i class="ph ph-qr-code text-2xl mb-1 text-emerald-500"></i> Codi</button>
-                                <button onclick="openModal('ar_exp')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-teal-50 transition text-xs font-medium"><i class="ph ph-cube text-2xl mb-1 text-teal-500"></i> AR</button>
-                                <button onclick="openModal('survey')" class="flex flex-col items-center p-3 bg-white rounded-xl border border-slate-200 hover:bg-pink-50 transition text-xs font-medium"><i class="ph ph-chart-pie-slice text-2xl mb-1 text-pink-500"></i> Enquesta</button>
+                    <div class="w-full lg:w-64 shrink-0 flex flex-col gap-3">
+                        <div class="bg-slate-100 p-4 rounded-2xl border border-slate-200">
+                            <h3 class="font-bold text-slate-800 mb-3 text-sm uppercase tracking-wider">Afegir Activitat</h3>
+                            <div class="flex flex-col gap-2">
+                                <button onclick="openModal('info')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-blue-50 transition text-sm font-medium text-left"><i class="ph ph-info text-xl text-blue-500"></i> Info</button>
+                                <button onclick="openModal('quiz')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-purple-50 transition text-sm font-medium text-left"><i class="ph ph-list-checks text-xl text-purple-500"></i> Test</button>
+                                <button onclick="openModal('question')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-indigo-50 transition text-sm font-medium text-left"><i class="ph ph-question text-xl text-indigo-500"></i> Pregunta</button>
+                                <button onclick="openModal('sort')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-yellow-50 transition text-sm font-medium text-left"><i class="ph ph-list-numbers text-xl text-yellow-500"></i> Ordenar</button>
+                                <button onclick="openModal('mission')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-orange-50 transition text-sm font-medium text-left"><i class="ph ph-warning-circle text-xl text-orange-500"></i> Missió</button>
+                                <button onclick="openModal('web')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-blue-50 transition text-sm font-medium text-left"><i class="ph ph-globe text-xl text-blue-500"></i> Web</button>
+                                <button onclick="openModal('find_spot')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-red-50 transition text-sm font-medium text-left"><i class="ph ph-map-pin text-xl text-red-500"></i> Lloc GPS</button>
+                                <button onclick="openModal('scan_code')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-emerald-50 transition text-sm font-medium text-left"><i class="ph ph-qr-code text-xl text-emerald-500"></i> Codi</button>
+                                <button onclick="openModal('ar_exp')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-teal-50 transition text-sm font-medium text-left"><i class="ph ph-cube text-xl text-teal-500"></i> Realitat Augm.</button>
+                                <button onclick="openModal('survey')" class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 hover:bg-pink-50 transition text-sm font-medium text-left"><i class="ph ph-chart-pie-slice text-xl text-pink-500"></i> Enquesta</button>
                             </div>
                         </div>
                     </div>
+
+                    <div class="flex-grow max-w-2xl w-full">
+                        <div class="mb-6 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+                            <h2 class="text-2xl font-bold text-slate-800">Editor de Ruta</h2>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="generateAutonomousHTML()" class="px-5 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-md transition text-sm flex items-center gap-2"><i class="ph-bold ph-file-html text-lg"></i> Generar ruta HTML</button>
+                                <button onclick="openModal('save_tour')" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition text-sm flex items-center gap-2"><i class="ph-bold ph-floppy-disk text-lg"></i> Desar projecte</button>
+                            </div>
+                        </div>
+                        <div class="bg-slate-100 p-6 rounded-2xl border border-slate-200 mb-6">
+                            <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="ph-fill ph-map-pin-line text-emerald-600"></i> Estructura Temporal</h3>
+                            <div class="max-h-[600px] overflow-y-auto pr-2 no-scrollbar">${stepsHtml}</div>
+                        </div>
+                    </div>
                     
-                    <div class="hidden lg:flex flex-col items-center justify-start pt-16">
+                    <div class="hidden xl:flex flex-col items-center justify-start pt-16">
                         <span class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Simulador Mòbil</span>
                         <div class="mobile-simulator">
                             ${renderStepPreviewSimulator()}
@@ -528,7 +697,6 @@
         function setPreviewStep(idx, e) {
             if (e && (e.target.closest('button') || e.target.tagName.toLowerCase() === 'button')) return;
             
-            // Guardem l'estat actual de l'scroll tant de la finestra com de la llista
             const listContainer = document.querySelector('.overflow-y-auto.pr-2.no-scrollbar');
             const scrollPos = listContainer ? listContainer.scrollTop : 0;
             const windowScroll = window.scrollY;
@@ -536,7 +704,6 @@
             state.previewStepIndex = idx;
             renderView();
             
-            // Restaurem l'scroll immediatament després de renderitzar
             const newListContainer = document.querySelector('.overflow-y-auto.pr-2.no-scrollbar');
             if (newListContainer) newListContainer.scrollTop = scrollPos;
             window.scrollTo(0, windowScroll);
@@ -580,7 +747,7 @@
             let formHtml = '';
             let footerHtml = '';
             
-            const geoPanel = (type === 'save_tour' || type === 'find_spot') ? '' : `
+            const geoPanelBase = (type === 'save_tour' || type === 'find_spot') ? '' : `
                 <div class="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div class="flex items-center justify-between mb-4">
                         <label class="text-sm font-bold text-slate-700 flex items-center gap-2"><i class="ph-bold ph-crosshair"></i> Restricció per Geoposició</label>
@@ -599,6 +766,21 @@
                     </div>
                 </div>
             `;
+
+            const defaultReq = type === 'ar_exp' ? false : true;
+            const requireCorrectChecked = editData.requireCorrect !== undefined ? editData.requireCorrect : defaultReq;
+            
+            const requireCorrectPanel = (type === 'save_tour') ? '' : `
+                <div class="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-bold text-slate-700 flex items-center gap-2"><i class="ph-bold ph-shield-check"></i> Superació obligatòria per avançar</label>
+                        <input type="checkbox" id="modalRequireCorrect" ${requireCorrectChecked ? 'checked' : ''} class="w-5 h-5 accent-emerald-600">
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-2">Si es desmarca, el botó de "Continuar" apareixerà igualment després d'un intent incorrecte o omès.</p>
+                </div>
+            `;
+
+            const geoPanel = geoPanelBase + requireCorrectPanel;
 
             const mediaHtml = `
                 <div class="mb-4"><label class="block text-sm font-bold text-slate-700 mb-1">Recurs Multimèdia</label>
@@ -635,34 +817,36 @@
                         <p class="text-xs text-slate-500 mt-2">El registre de la partida s'enviarà a aquesta adreça en acabar la ruta.</p>
                     </div>
                     <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl mt-6">
-                        <p class="text-sm text-blue-800 font-medium leading-relaxed"><i class="ph-bold ph-info"></i> Com voleu desar-ho? Podeu descarregar la ruta com a JSON, o generar-la com un HTML autònom per distribuir-la.</p>
+                        <p class="text-sm text-blue-800 font-medium leading-relaxed"><i class="ph-bold ph-info"></i> Feu clic a continuació per descarregar el projecte al vostre ordinador en format JSON.</p>
                     </div>
                 `;
                 footerHtml = `
                     <div class="flex flex-col gap-3 mt-6 border-t border-slate-100 pt-6">
+                        <button onclick="finalizeSaveTour(false, true)" class="w-full py-3 bg-white border-2 border-emerald-200 hover:border-emerald-400 text-emerald-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-check text-xl"></i> Desar canvis a la memòria</button>
                         <button onclick="finalizeSaveTour(true, true)" class="w-full py-3 bg-white border-2 border-blue-200 hover:border-blue-400 text-blue-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-download-simple text-xl"></i> Desar com a fitxer JSON</button>
-                        <button onclick="generateAutonomousHTML()" class="w-full py-3 bg-white border-2 border-purple-200 hover:border-purple-400 text-purple-700 font-bold rounded-xl transition shadow-sm flex items-center justify-center gap-2"><i class="ph-bold ph-file-html text-xl"></i> Generar ruta HTML (Autònoma)</button>
                         <button onclick="closeModal()" class="w-full py-3 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-xl font-bold transition mt-2">Cancel·lar i seguir editant</button>
                     </div>
                 `;
-            } else if (type === 'stage') {
-                formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Títol de l'Etapa</label><input type="text" id="modalInput1" value="${editData.title||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}`;
+            } else if (type === 'web') {
+                formHtml = `${geoPanel}
+                <div class="mb-4"><label class="block font-bold">Títol / Instruccions</label><input type="text" id="modalInput1" value="${editData.instruction||''}" class="w-full p-3 border rounded-xl" placeholder="Ex: Visiteu la web"></div>
+                <div class="mb-4"><label class="block font-bold">Descripció (Clicable)</label><textarea id="modalInput2" rows="3" class="w-full p-3 border rounded-xl" placeholder="Aquest text serà l'enllaç...">${editData.content||''}</textarea></div>
+                <div class="mb-4"><label class="block font-bold">Enllaç (URL)</label><input type="text" id="modalInput3" value="${editData.url||''}" class="w-full p-3 border rounded-xl" placeholder="www.exemple.cat"></div>
+                ${mediaHtml}`;
             } else if (type === 'info') {
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Text Informatiu</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.content||''}</textarea></div>${mediaHtml}`;
             } else if (type === 'quiz') {
-                state.modalState.tempQuizOptions = editData.options || ['', ''];
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Pregunta Test</label><input type="text" id="modalInput1" value="${editData.question||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}
                 <div class="mb-4"><label class="block font-bold">Punts (1r intent / Següents)</label><div class="flex gap-2"><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-2 border"><input type="number" id="modalScore2" value="${editData.scoreNextTries||5}" class="w-full p-2 border"></div></div>
-                <div class="mb-4"><label class="block font-bold">Respostes</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2"><input type="radio" name="correctOpt" value="${i}" ${editData.correct===i?'checked':''}> <input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-blue-500">+ Afegir opció</button></div>`;
+                <div class="mb-4"><label class="block font-bold">Respostes</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2"><input type="radio" name="correctOpt" value="${i}" ${editData.correct===i?'checked':''}> <input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button type="button" onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button type="button" onclick="addQuizOption()" class="text-blue-500">+ Afegir opció</button></div>`;
             } else if (type === 'question') {
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Pregunta Oberta</label><input type="text" id="modalInput1" value="${editData.question||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}
                 <div class="mb-4"><label class="block font-bold">Punts (1r intent / Següents)</label><div class="flex gap-2"><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-2 border"><input type="number" id="modalScore2" value="${editData.scoreNextTries||5}" class="w-full p-2 border"></div></div>
                 <div class="mb-4"><label class="block font-bold">Respostes correctes (una per línia)</label><textarea id="modalInput2" class="w-full p-3 border rounded-xl">${(editData.validAnswers||[]).join('\n')}</textarea></div>`;
             } else if (type === 'sort') {
-                state.modalState.tempQuizOptions = editData.correctOrder || ['', '', ''];
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Instrucció per ordenar</label><input type="text" id="modalInput1" value="${editData.instruction||''}" class="w-full p-3 border rounded-xl" placeholder="Ordena els elements..."></div>${mediaHtml}
                 <div class="mb-4"><label class="block font-bold">Punts (1r intent / Següents)</label><div class="flex gap-2"><input type="number" id="modalScore1" value="${editData.scoreFirstTry||10}" class="w-full p-2 border"><input type="number" id="modalScore2" value="${editData.scoreNextTries||5}" class="w-full p-2 border"></div></div>
-                <div class="mb-4"><label class="block font-bold">Conceptes en ordre correcte</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2 items-center"><span class="font-bold text-slate-400 w-6">${i+1}.</span><input type="text" id="opt${i}" value="${o}" oninput="state.modalState.tempQuizOptions[${i}] = this.value" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-yellow-500 font-bold">+ Afegir element</button></div>`;
+                <div class="mb-4"><label class="block font-bold">Conceptes en ordre correcte</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2 items-center"><span class="font-bold text-slate-400 w-6">${i+1}.</span><input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button type="button" onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button type="button" onclick="addQuizOption()" class="text-yellow-500 font-bold">+ Afegir element</button></div>`;
             } else if (type === 'find_spot') {
                 formHtml = `<div class="mb-4"><label class="block font-bold">Indicació del Lloc</label><textarea id="modalInput1" class="w-full p-3 border rounded-xl">${editData.locationHint||''}</textarea></div>
                 <div id="creatorMap" class="w-full h-48 bg-slate-200 rounded-xl mb-4"></div><label class="block font-bold">Radi (m)</label><input type="number" id="modalRadius" value="${editData.targetRadius||30}" class="w-full p-3 border rounded-xl" onchange="updateMapCircle(this.value)">
@@ -676,18 +860,23 @@
                 const arType = document.getElementById('modalInputArType')?.value || editData.arType || '3d';
                 const arUrl = document.getElementById('modalInputArUrl')?.value || (editData.arType !== 'text' ? editData.arContent : '') || '';
                 const arText = document.getElementById('modalInputArText')?.value || (editData.arType === 'text' ? editData.arContent : '') || '';
-                
+                const triggerImageB64 = document.getElementById('modalInputTriggerB64')?.value || editData.triggerImageB64 || '';
+
                 formHtml = `${geoPanel}
                 <div class="mb-4">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Instruccions de la interacció AR</label>
                     <textarea id="modalInput1" rows="2" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Enfoqueu amb la càmera la imatge d'activació...">${editData.instruction || ''}</textarea>
                 </div>
                 <div class="mb-4">
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Punts en detectar la imatge</label>
+                    <input type="number" id="modalScore1" value="${editData.scoreFirstTry !== undefined ? editData.scoreFirstTry : 10}" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500">
+                </div>
+                <div class="mb-4">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Imatge d'Activació (Pugeu l'arxiu per detecció Real)</label>
                     <input type="file" id="modalInputTriggerFile" accept="image/*" onchange="handleTriggerUpload(event)" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg">
-                    <input type="hidden" id="modalInputTriggerB64" value="${editData.triggerImageB64 || ''}">
+                    <input type="hidden" id="modalInputTriggerB64" value="${triggerImageB64}">
                     <input type="hidden" id="modalInputTriggerTemplate" value="${editData.triggerTemplateB64 || ''}">
-                    <img id="triggerPreview" src="${editData.triggerImageB64 || ''}" class="h-24 mt-3 rounded-lg border-2 border-teal-200 object-cover shadow-sm" style="display: ${editData.triggerImageB64 ? 'block' : 'none'}">
+                    <img id="triggerPreview" src="${triggerImageB64}" class="h-24 mt-3 rounded-lg border-2 border-teal-200 object-cover shadow-sm" style="display: ${triggerImageB64 ? 'block' : 'none'}">
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-semibold text-slate-700 mb-2">Contingut AR a projectar</label>
@@ -709,9 +898,8 @@
                     <textarea id="modalInputArText" rows="2" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Escriu el text que apareixerà flotant a l'espai...">${arText}</textarea>
                 </div>`;
             } else if (type === 'survey') {
-                state.modalState.tempQuizOptions = editData.options || ['', '', '', ''];
                 formHtml = `${geoPanel}<div class="mb-4"><label class="block font-bold">Pregunta d'Enquesta</label><input type="text" id="modalInput1" value="${editData.question||''}" class="w-full p-3 border rounded-xl"></div>${mediaHtml}
-                <div class="mb-4"><label class="block font-bold">Opcions de resposta</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2"><input type="text" id="opt${i}" value="${o}" class="flex-grow p-2 border rounded"> <button onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button onclick="addQuizOption()" class="text-blue-500">+ Afegir opció</button></div>`;
+                <div class="mb-4"><label class="block font-bold">Opcions de resposta</label><div id="quizOptionsList">${state.modalState.tempQuizOptions.map((o,i)=>`<div class="flex gap-2 mb-2"><input type="text" id="opt${i}" value="${(o||'').replace(/"/g, '&quot;')}" class="flex-grow p-2 border rounded"> <button type="button" onclick="removeQuizOption(${i})" class="text-red-500">X</button></div>`).join('')}</div><button type="button" onclick="addQuizOption()" class="text-blue-500">+ Afegir opció</button></div>`;
             }
 
             if (!footerHtml) {
@@ -736,11 +924,15 @@
 
         function renderPlay() {
             const tour = state.tours.find(t => t.id === state.playState.tourId);
-            const step = tour.steps[state.playState.currentStep];
+            const step = tour && tour.steps ? tour.steps[state.playState.currentStep] : null;
+            if (!step) return '<div class="p-8 text-center text-slate-500">No s\'ha pogut carregar l\'activitat.</div>';
             const progress = (state.playState.currentStep / tour.steps.length) * 100;
 
             let mainContent = '';
             
+            const isMediaRestricted = (step.mediaType === 'video' || step.mediaType === 'audio') && !getEmbedUrl(step.mediaUrl).includes('embed');
+            const hideBtnStyle = isMediaRestricted ? 'style="display:none"' : '';
+
             if ((step.hasGeo || step.type === 'find_spot') && !state.playState.geoVerified) {
                 mainContent = `
                     <div class="bg-white p-8 rounded-3xl border-4 border-red-100 text-center fade-in">
@@ -769,21 +961,26 @@
                 `;
             } else {
                 let media = renderMedia(step);
-                if (step.type === 'stage') {
-                    mainContent = `<div class="bg-slate-800 text-white p-10 rounded-3xl text-center border-4 border-slate-700 relative overflow-hidden">
-                        <div class="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHBhdGggZD0iTTExLjM2IDYuNjRBMCAwIDAgMCAwIDEzIDEweiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==')]"></div>
-                        ${media}<i class="ph-fill ph-flag text-5xl text-emerald-400 mb-4 z-10"></i><h2 class="text-3xl font-black uppercase z-10">${step.title}</h2></div>
-                        <button onclick="nextStep()" class="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg mt-6 shadow-lg">Començar etapa</button>`;
+                if (step.type === 'web') {
+                    mainContent = `<div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
+                        ${media}
+                        <h3 class="text-2xl font-bold mb-4 text-slate-800">${step.instruction || 'Recurs Web'}</h3>
+                        <div onclick="window.open('${step.url}', '_blank')" class="cursor-pointer bg-blue-50 hover:bg-blue-100 border border-blue-200 p-6 rounded-2xl transition transform hover:scale-105 shadow-sm mb-6">
+                            <i class="ph-duotone ph-link text-4xl text-blue-500 mb-3"></i>
+                            <p class="text-lg text-blue-800 font-medium leading-relaxed">${step.content || "Feu clic aquí per obrir l'enllaç"}</p>
+                        </div>
+                        <button id="media-continue-btn" ${hideBtnStyle} onclick="nextStep()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg mt-2 shadow-lg">Continuar</button>
+                    </div>`;
                 } else if (step.type === 'info') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">${media}<p class="text-lg text-slate-700 leading-relaxed">${step.content}</p></div>
-                        <button onclick="nextStep()" class="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg mt-6">Següent</button>`;
+                        <button id="media-continue-btn" ${hideBtnStyle} onclick="nextStep()" class="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg mt-6">Següent</button>`;
                 } else if (step.type === 'quiz') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
                         <div class="space-y-3 mt-4">${step.options.map((o,i)=>`<button onclick="answerQuiz(${i})" class="w-full p-4 text-left border-2 rounded-2xl hover:border-purple-400 transition font-medium">${o}</button>`).join('')}</div></div>`;
                 } else if (step.type === 'question') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
                         <input type="text" id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="Escriu aquí...">
-                        <button onclick="verifyText('question')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Enviar</button></div>`;
+                        <button id="media-continue-btn" ${hideBtnStyle} onclick="verifyText('question')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Enviar</button></div>`;
                 } else if (step.type === 'sort') {
                     if (!state.playState.currentSortOrder) {
                         let arr = [...step.correctOrder];
@@ -806,11 +1003,11 @@
                                 </div>
                             `).join('')}
                         </div>
-                        <button onclick="verifySort()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold mt-6 text-lg">Comprovar Ordre</button></div>`;
+                        <button id="media-continue-btn" ${hideBtnStyle} onclick="verifySort()" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold mt-6 text-lg">Comprovar Ordre</button></div>`;
                 } else if (step.type === 'mission') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h2 class="font-bold mb-4">Missió</h2><p class="mb-6">${step.instruction}</p>${media}
                         <textarea id="playInput" class="w-full p-4 bg-slate-50 border-2 rounded-2xl mb-4" rows="4"></textarea>
-                        <button onclick="verifyText('mission')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Completar Missió</button></div>`;
+                        <button id="media-continue-btn" ${hideBtnStyle} onclick="verifyText('mission')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Completar Missió</button></div>`;
                 } else if (step.type === 'ar_exp') {
                     let mediaIcon = 'ph-cube';
                     if(step.arType === 'video') mediaIcon = 'ph-video-camera';
@@ -843,7 +1040,7 @@
                             <h3 class="text-xl font-bold mb-6">Codi de Validació</h3>
                             <p class="text-slate-600 mb-6">${step.instruction}</p>
                             <input type="text" id="playInput" class="w-full text-center text-xl font-mono uppercase tracking-widest p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="CODI...">
-                            <button onclick="verifyText('scan_code')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Validar <i class="ph-bold ph-check"></i></button>
+                            <button id="media-continue-btn" ${hideBtnStyle} onclick="verifyText('scan_code')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Validar <i class="ph-bold ph-check"></i></button>
                         </div>`;
                 } else if (step.type === 'survey') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl border border-slate-200"><h3 class="text-xl font-bold mb-6">${step.question}</h3>${media}
@@ -851,9 +1048,27 @@
                 }
             }
 
-            return `<div class="max-w-xl mx-auto w-full flex flex-col h-full"><div class="mb-8 pt-2"><div class="flex justify-between text-xs font-bold text-slate-400 mb-2 uppercase"><span>${tour.title}</span><span>Pas ${state.playState.currentStep + 1}/${tour.steps.length}</span></div>
-                    <div class="w-full bg-slate-200 rounded-full h-2"><div class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: ${progress}%"></div></div></div>
-                    <div class="flex-grow">${mainContent}</div><div class="mt-12 text-center"><button onclick="confirmExit()" class="text-slate-400 text-sm font-medium">Abandonar</button></div></div>`;
+            return `
+                <div class="max-w-xl mx-auto w-full flex flex-col h-full">
+                    <div class="mb-8 pt-2">
+                        <div class="flex items-center gap-3">
+                            ${state.playState.currentStep > 0 ? `
+                                <button onclick="previousStep()" class="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition" title="Pas anterior">
+                                    <i class="ph ph-arrow-left"></i>
+                                </button>
+                            ` : '<div class="w-8"></div>'}
+                            <div class="flex-grow">
+                                <div class="flex justify-between text-xs font-bold text-slate-400 mb-2 uppercase">
+                                    <span>${tour.title}</span>
+                                    <span>Pas ${state.playState.currentStep + 1}/${tour.steps.length}</span>
+                                </div>
+                                <div class="w-full bg-slate-200 rounded-full h-2"><div class="bg-emerald-500 h-2 rounded-full transition-all duration-500" style="width: ${progress}%"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-grow">${mainContent}</div>
+                    <div class="mt-12 text-center"><button onclick="confirmExit()" class="text-slate-400 text-sm font-medium">Abandonar</button></div>
+                </div>`;
         }
 
         function renderSummary() {
@@ -872,7 +1087,7 @@
 
         function getVisualsForStepType(type) {
             const map = {
-                'stage': { label: 'Etapa', iconClass: 'ph-flag', bgClass: 'bg-slate-100', textClass: 'text-slate-600' },
+                'web': { label: 'Web', iconClass: 'ph-globe', bgClass: 'bg-blue-100', textClass: 'text-blue-600' },
                 'info': { label: 'Informació', iconClass: 'ph-info', bgClass: 'bg-blue-100', textClass: 'text-blue-600' },
                 'quiz': { label: 'Test', iconClass: 'ph-list-checks', bgClass: 'bg-purple-100', textClass: 'text-purple-600' },
                 'question': { label: 'Pregunta', iconClass: 'ph-question', bgClass: 'bg-indigo-100', textClass: 'text-indigo-600' },
@@ -895,7 +1110,10 @@
             const radius = parseInt(document.getElementById('modalRadius').value) || 30;
 
             mapInstance = L.map('creatorMap').setView([lat, lng], 15);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                maxZoom: 20
+            }).addTo(mapInstance);
             
             mapMarker = L.marker([lat, lng]).addTo(mapInstance);
             mapCircle = L.circle([lat, lng], { radius: radius, color: '#3b82f6', fillOpacity: 0.2 }).addTo(mapInstance);
@@ -916,9 +1134,17 @@
         function initMapForPlay(lat, lng, radius) {
             const container = document.getElementById('playMap');
             if (!container) return;
-            mapInstance = L.map('playMap', { zoomControl: false }).setView([lat, lng], 16);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
-            L.circle([lat, lng], { radius: radius, color: '#ef4444', fillOpacity: 0.3 }).addTo(mapInstance);
+            
+            const safeLat = (lat === undefined || isNaN(lat) || lat === null) ? 41.3851 : lat;
+            const safeLng = (lng === undefined || isNaN(lng) || lng === null) ? 2.1734 : lng;
+            const safeRadius = (radius === undefined || isNaN(radius) || radius === null) ? 30 : radius;
+
+            mapInstance = L.map('playMap', { zoomControl: false }).setView([safeLat, safeLng], 16);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                maxZoom: 20
+            }).addTo(mapInstance);
+            L.circle([safeLat, safeLng], { radius: safeRadius, color: '#ef4444', fillOpacity: 0.3 }).addTo(mapInstance);
             setTimeout(() => mapInstance.invalidateSize(), 200);
         }
 
@@ -944,8 +1170,12 @@
             }
 
             navigator.geolocation.getCurrentPosition(pos => {
-                const dist = getDistanceFromLatLonInM(pos.coords.latitude, pos.coords.longitude, step.targetLat, step.targetLng);
-                const radius = step.targetRadius || 30;
+                const safeLat = (step.targetLat === undefined || isNaN(step.targetLat) || step.targetLat === null) ? 41.3851 : step.targetLat;
+                const safeLng = (step.targetLng === undefined || isNaN(step.targetLng) || step.targetLng === null) ? 2.1734 : step.targetLng;
+                
+                const dist = getDistanceFromLatLonInM(pos.coords.latitude, pos.coords.longitude, safeLat, safeLng);
+                const radius = (step.targetRadius === undefined || isNaN(step.targetRadius)) ? 30 : step.targetRadius;
+                
                 if (dist <= radius) {
                     state.playState.geoVerified = true;
                     renderView();
@@ -971,10 +1201,10 @@
         }
 
         function openModal(type, editIndex = null) {
-            state.modalState = { isOpen: true, type, editIndex, tempQuizOptions: [] };
+            state.modalState = { isOpen: true, type, editIndex, tempQuizOptions: [], tempValues: {} };
             if (type === 'quiz' || type === 'survey' || type === 'sort') {
                 const editData = editIndex !== null ? state.draftTour.steps[editIndex] : {};
-                state.modalState.tempQuizOptions = editData.options || editData.correctOrder || ['', ''];
+                state.modalState.tempQuizOptions = editData.options ? [...editData.options] : (editData.correctOrder ? [...editData.correctOrder] : (type === 'survey' ? ['', '', '', ''] : (type === 'sort' ? ['', '', ''] : ['', ''])));
                 state.modalState.tempQuizCorrect = editData.correct !== undefined ? editData.correct : 0;
             }
             renderModal();
@@ -982,6 +1212,57 @@
         }
         
         function closeModal() { if (mapInstance) { mapInstance.remove(); mapInstance = null; } state.modalState.isOpen = false; renderModal(); }
+
+        window.syncModalState = function() {
+            if (!state.modalState.tempValues) state.modalState.tempValues = {};
+            const container = document.getElementById('modal-container');
+            if (!container) return;
+            
+            // Sincronitza l'opció correcta per evitar col·lisions
+            const correctRadio = container.querySelector('input[name="correctOpt"]:checked');
+            if (correctRadio) state.modalState.tempQuizCorrect = parseInt(correctRadio.value);
+
+            const inputs = container.querySelectorAll('input, textarea, select');
+            inputs.forEach(el => {
+                // Ignorem els elements dinàmics de la llista (opt0, opt1...) ja que els gestionem a sota
+                if (el.id && !el.id.startsWith('opt') && el.name !== 'correctOpt') {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        state.modalState.tempValues[el.id] = el.checked;
+                    } else {
+                        state.modalState.tempValues[el.id] = el.value;
+                    }
+                }
+            });
+            
+            const list = document.getElementById('quizOptionsList');
+            if (list) {
+                const opts = list.querySelectorAll('input[type="text"]');
+                state.modalState.tempQuizOptions = Array.from(opts).map(o => o.value);
+            }
+        };
+
+        function renderModal() {
+            const container = document.getElementById('modal-container');
+            if (state.view === 'create' && state.modalState.isOpen) {
+                container.innerHTML = renderDynamicModal();
+                const geoPanelEl = document.getElementById('geoControlPanel');
+                if (state.modalState.type === 'find_spot' || (geoPanelEl && geoPanelEl.style.display !== 'none')) {
+                    setTimeout(initMapForCreation, 200);
+                }
+                setTimeout(() => {
+                    if (state.modalState.tempValues) {
+                        Object.keys(state.modalState.tempValues).forEach(key => {
+                            const el = document.getElementById(key);
+                            if (el) {
+                                if (el.type === 'checkbox' || el.type === 'radio') el.checked = state.modalState.tempValues[key];
+                                else el.value = state.modalState.tempValues[key];
+                                if (el.id === 'modalMediaSelect') el.dispatchEvent(new Event('change'));
+                            }
+                        });
+                    }
+                }, 10);
+            } else { container.innerHTML = ''; }
+        }
 
         function saveStepFromModal() {
             const type = state.modalState.type;
@@ -991,26 +1272,37 @@
                 mediaType: document.getElementById('modalMediaSelect')?.value || 'none',
                 mediaUrl: document.getElementById('modalMediaUrl')?.value.trim() || '',
                 hasGeo: document.getElementById('modalHasGeo')?.checked || (type === 'find_spot'),
-                targetLat: parseFloat(document.getElementById('modalInputLat')?.value),
-                targetLng: parseFloat(document.getElementById('modalInputLng')?.value),
+                requireCorrect: document.getElementById('modalRequireCorrect') ? document.getElementById('modalRequireCorrect').checked : true,
+                targetLat: parseFloat(document.getElementById('modalInputLat')?.value) || 41.3851,
+                targetLng: parseFloat(document.getElementById('modalInputLng')?.value) || 2.1734,
                 targetRadius: parseInt(document.getElementById('modalRadius')?.value) || 30
             };
 
             const v1 = document.getElementById('modalInput1')?.value.trim();
-            if (type === 'stage') stepData.title = v1;
-            else if (type === 'info') stepData.content = v1;
-            else if (type === 'quiz') {
+            if (type === 'web') {
+                stepData.instruction = v1;
+                stepData.content = document.getElementById('modalInput2')?.value.trim();
+                let urlVal = document.getElementById('modalInput3')?.value.trim();
+                if (urlVal && !/^https?:\/\//i.test(urlVal)) {
+                    urlVal = 'https://' + urlVal;
+                }
+                stepData.url = urlVal;
+            } else if (type === 'info') {
+                stepData.content = v1;
+            } else if (type === 'quiz') {
                 stepData.question = v1;
-                stepData.options = state.modalState.tempQuizOptions.map((o,i)=>document.getElementById('opt'+i).value.trim());
+                stepData.options = state.modalState.tempQuizOptions.map((_,i)=>document.getElementById('opt'+i).value.trim());
                 stepData.correct = parseInt(document.querySelector('input[name="correctOpt"]:checked')?.value || 0);
                 stepData.scoreFirstTry = parseInt(document.getElementById('modalScore1').value);
                 stepData.scoreNextTries = parseInt(document.getElementById('modalScore2').value);
             } else if (type === 'question') {
                 stepData.question = v1;
                 stepData.validAnswers = document.getElementById('modalInput2').value.split('\n').map(a=>a.trim().toLowerCase());
+                stepData.scoreFirstTry = parseInt(document.getElementById('modalScore1').value);
+                stepData.scoreNextTries = parseInt(document.getElementById('modalScore2').value);
             } else if (type === 'sort') {
                 stepData.instruction = v1;
-                stepData.correctOrder = state.modalState.tempQuizOptions.map((o,i)=>document.getElementById('opt'+i).value.trim());
+                stepData.correctOrder = state.modalState.tempQuizOptions.map((_,i)=>document.getElementById('opt'+i).value.trim());
                 stepData.scoreFirstTry = parseInt(document.getElementById('modalScore1').value);
                 stepData.scoreNextTries = parseInt(document.getElementById('modalScore2').value);
             } else if (type === 'find_spot') {
@@ -1024,23 +1316,20 @@
                 const arType = document.getElementById('modalInputArType').value;
                 const arUrl = document.getElementById('modalInputArUrl').value.trim();
                 const arText = document.getElementById('modalInputArText').value.trim();
-                
                 const triggerImageB64 = document.getElementById('modalInputTriggerB64').value;
                 const triggerTemplateB64 = document.getElementById('modalInputTriggerTemplate').value;
-
-                if(!v1) return showDialog("Falta escriure la instrucció de l'experiència de Realitat Augmentada.");
-                if(!triggerImageB64 && editIndex === null) return showDialog("Heu d'afegir una Imatge d'Activació (Trigger) pujant un fitxer.");
-                if(arType !== 'text' && !arUrl) return showDialog("Falta afegir la URL del recurs multimèdia escollit.");
-                if(arType === 'text' && !arText) return showDialog("Falta escriure el text del missatge ocult flotant.");
 
                 stepData.instruction = v1;
                 stepData.triggerImageB64 = triggerImageB64;
                 stepData.triggerTemplateB64 = triggerTemplateB64;
                 stepData.arType = arType;
                 stepData.arContent = arType === 'text' ? arText : arUrl;
+                
+                let s1 = parseInt(document.getElementById('modalScore1')?.value);
+                stepData.scoreFirstTry = isNaN(s1) ? 10 : s1;
             } else if (type === 'survey') {
                 stepData.question = v1;
-                stepData.options = state.modalState.tempQuizOptions.map((o,i)=>document.getElementById('opt'+i)?.value.trim() || '');
+                stepData.options = state.modalState.tempQuizOptions.map((_,i)=>document.getElementById('opt'+i)?.value.trim() || '');
             }
 
             if (editIndex !== null) {
@@ -1060,8 +1349,16 @@
         function moveStep(i, d) { const steps = state.draftTour.steps; const j = i + d; if (j>=0 && j<steps.length) { [steps[i], steps[j]] = [steps[j], steps[i]]; renderView(); } }
         function moveSortItem(i, d) { const arr = state.playState.currentSortOrder; const j = i + d; if (j>=0 && j<arr.length) { [arr[i], arr[j]] = [arr[j], arr[i]]; renderView(); } }
 
-        function addQuizOption() { state.modalState.tempQuizOptions.push(''); renderModal(); }
-        function removeQuizOption(i) { state.modalState.tempQuizOptions.splice(i, 1); renderModal(); }
+        function addQuizOption() { 
+            window.syncModalState();
+            state.modalState.tempQuizOptions.push(''); 
+            renderModal(); 
+        }
+        function removeQuizOption(i) { 
+            window.syncModalState();
+            state.modalState.tempQuizOptions.splice(i, 1); 
+            renderModal(); 
+        }
 
         function startCreation() { state.draftTour = { id: null, title: '', description: '', steps: [], trackingUrl: '', accessType: 'free' }; navigateTo('create'); }
         function editTour(id) { state.draftTour = JSON.parse(JSON.stringify(state.tours.find(t=>t.id===id))); navigateTo('create'); }
@@ -1105,13 +1402,15 @@
 
             if (downloadAsJson && savedTour) {
                 triggerDownloadJSON(savedTour);
-                if (keepEditing) {
-                    closeModal();
-                    return; 
-                }
+            }
+            
+            closeModal();
+            
+            if (keepEditing) {
+                renderView();
+                return; 
             }
 
-            closeModal();
             navigateTo('home');
         }
 
@@ -1134,25 +1433,53 @@
             if (descEl) state.draftTour.description = descEl.value.trim();
             if (trackEl) state.draftTour.trackingUrl = trackEl.value.trim();
             
-            if (!state.draftTour.title) return showDialog("Cal afegir un títol a la ruta.");
+            if (!state.draftTour.title) return showDialog("Cal afegir un títol al projecte abans de generar l'HTML. Feu clic a 'Desar projecte' per configurar-ho.");
             if (state.draftTour.steps.length === 0) return showDialog("Cal afegir almenys un contingut o etapa a la ruta.");
 
             let tourToExport = { ...state.draftTour, id: 'r-' + Date.now() };
             
-            let htmlContent = document.documentElement.outerHTML;
+            const cleanDoc = document.documentElement.cloneNode(true);
             
-            const scriptToInject = `
-                // Codi injectat per generar l'experiència autònoma
+            const modalContainer = cleanDoc.querySelector('#modal-container');
+            if (modalContainer) modalContainer.innerHTML = '';
+            
+            const dialogContainer = cleanDoc.querySelector('#dialog-container');
+            if (dialogContainer) dialogContainer.innerHTML = '';
+            
+            const appContainer = cleanDoc.querySelector('#app');
+            if (appContainer) appContainer.innerHTML = '';
+            
+            cleanDoc.querySelectorAll('a-scene').forEach(el => el.remove());
+            cleanDoc.querySelectorAll('#debug-info').forEach(el => el.remove());
+            cleanDoc.querySelectorAll('#autonomous-data').forEach(el => el.remove());
+            
+            // Neteja de scripts injectats automàticament per l'entorn d'edició d'IA
+            // Fragmentem les paraules clau perquè aquest script no es detecti i s'elimini a si mateix!
+            cleanDoc.querySelectorAll('script').forEach(script => {
+                const text = script.textContent || '';
+                const isFirebase = text.includes('firebase' + 'Config') || text.includes('__firebase' + '_config') || text.includes('firebase' + 'AuthBridge');
+                const isModelInfo = text.includes('model' + 'Information');
+                const isWs = script.hasAttribute('ws-interception-config');
+                
+                if (isFirebase || isModelInfo || isWs) {
+                    script.remove();
+                }
+            });
+            
+            const safeJSON = JSON.stringify(tourToExport).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+            
+            const newScript = document.createElement('script');
+            newScript.id = 'autonomous-data';
+            newScript.textContent = `
                 window.isAutonomous = true;
-                window.onload = () => {
-                    state.tours = [${JSON.stringify(tourToExport)}];
-                    checkTourAccess('${tourToExport.id}');
-                };
+                window.AUTONOMOUS_TOUR = ${safeJSON};
             `;
+            cleanDoc.querySelector('head').insertBefore(newScript, cleanDoc.querySelector('head').firstChild);
+
+            let htmlContent = cleanDoc.outerHTML;
+            const finalFileContent = "<!DOCTYPE html>\n" + htmlContent;
             
-            htmlContent = htmlContent.replace(/window\.onload = \(\) => \{\s*renderAll\(\);\s*loadToursFromCatalog\(\);\s*\};/, scriptToInject);
-            
-            const blob = new Blob(["<!DOCTYPE html>\n<html lang=\"ca\">\n" + htmlContent + "\n</html>"], {type: "text/html;charset=utf-8"});
+            const blob = new Blob([finalFileContent], {type: "text/html;charset=utf-8"});
             const dl = document.createElement('a');
             dl.href = URL.createObjectURL(blob);
             dl.download = `${tourToExport.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_rutaviva_autonoma.html`;
@@ -1162,7 +1489,6 @@
             closeModal();
         }
 
-        // --- SISTEMA DE SEGUIMENT I RESPOSTES ---
         function logInteraction(action, answer, score) {
             const tour = state.tours.find(t => t.id === state.playState.tourId);
             if (!tour || !tour.trackingUrl) return;
@@ -1203,7 +1529,7 @@
 
         function checkTourAccess(id) {
             const tour = state.tours.find(t=>t.id===id);
-            if (tour.accessType === 'restricted') {
+            if (tour && tour.accessType === 'restricted') {
                 if (!tour.trackingUrl) {
                     return showDialog("Aquesta ruta està restringida però no té cap servidor configurat per validar l'accés. Modifiqueu l'experiència per incloure la URL.", "alert");
                 }
@@ -1214,20 +1540,29 @@
                     const btnContainer = document.getElementById('dialogButtonsContainer');
                     if(btnContainer) btnContainer.innerHTML = `<div class="px-6 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold flex items-center gap-2"><i class="ph ph-spinner animate-spin text-xl"></i> Validant...</div>`;
 
-                    fetch(tour.trackingUrl + '?action=verify&code=' + encodeURIComponent(code))
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.valid) {
-                                state.dialogState.isOpen = false;
-                                renderDialogUI();
-                                startTour(id);
-                            } else {
-                                showDialog("El codi introduït no existeix o no és vàlid.", "alert");
-                            }
-                        })
-                        .catch(err => {
-                            showDialog("S'ha produït un error connectant amb el servidor en validar el codi. Comproveu la connexió a internet o la configuració de la URL.", "alert");
-                        });
+                    try {
+                        fetch(tour.trackingUrl + '?action=verify&code=' + encodeURIComponent(code))
+                            .then(res => res.text())
+                            .then(text => {
+                                try {
+                                    const data = JSON.parse(text);
+                                    if (data.valid) {
+                                        state.dialogState.isOpen = false;
+                                        renderDialogUI();
+                                        startTour(id);
+                                    } else {
+                                        showDialog("El codi introduït no existeix o no és vàlid.", "alert");
+                                    }
+                                } catch(err) {
+                                    showDialog("S'ha produït un error connectant amb el servidor. El codi o la URL no són vàlids.", "alert");
+                                }
+                            })
+                            .catch(err => {
+                                showDialog("S'ha produït un error de xarxa en validar el codi.", "alert");
+                            });
+                    } catch(e) {
+                        showDialog("No s'ha pogut validar l'accés per un error de connexió.", "alert");
+                    }
                 }, "Codi (ex: 45A9)");
             } else {
                 startTour(id);
@@ -1236,31 +1571,22 @@
 
         function startTour(id, startStepIndex = 0) {
             const tour = state.tours.find(t=>t.id===id);
+            if (!tour || !tour.steps || tour.steps.length === 0) {
+                showDialog("Aquesta ruta no té cap activitat. Afegiu-ne alguna abans d'iniciar l'experiència.");
+                return;
+            }
+            
+            const maxScore = tour.steps.reduce((acc, step) => {
+                if (['quiz', 'question', 'sort', 'ar_exp'].includes(step.type)) return acc + (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
+                return acc;
+            }, 0);
             
             const initPlay = () => {
-                const maxScore = tour.steps.reduce((acc, step) => {
-                    if (step.type === 'quiz' || step.type === 'question' || step.type === 'sort') return acc + (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
-                    return acc;
-                }, 0);
                 state.playState = { tourId: id, currentStep: startStepIndex, score: 0, attempts: {}, feedbackMsg: null, geoVerified: false, maxScore: maxScore, stepStartTime: Date.now(), interactionLogs: [], currentSortOrder: null };
                 navigateTo('play');
             };
 
-            // Demanar permisos de càmera a l'inici independentment de si hi ha AR
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                    .then(stream => {
-                        stream.getTracks().forEach(track => track.stop());
-                        initPlay();
-                    })
-                    .catch(err => {
-                        showDialog("L'aplicació requereix accés a la càmera per a algunes funcions. Assegureu-vos de donar els permisos o d'obrir el fitxer en un entorn compatible. Es podrà continuar l'experiència visualitzant el contingut igualment.", "alert", () => {
-                            initPlay();
-                        });
-                    });
-            } else {
-                initPlay();
-            }
+            initPlay();
         }
 
         function previewFromStep(i) {
@@ -1355,6 +1681,14 @@
             renderView();
         }
 
+        function answerSurvey() {
+            state.playState.score += 5;
+            state.playState.feedbackMsg = "L'opció s'ha registrat correctament. Gràcies per participar!";
+            state.playState.feedbackType = 'success';
+            logInteraction('Enquesta', 'Completada', 5);
+            renderView();
+        }
+
         function nextStep() {
             state.playState.feedbackMsg = null;
             state.playState.geoVerified = false;
@@ -1372,7 +1706,19 @@
             }
         }
 
+        window.previousStep = function() {
+            if (state.playState.currentStep > 0) {
+                state.playState.currentStep--;
+                state.playState.feedbackMsg = null;
+                state.playState.geoVerified = false;
+                state.playState.currentSortOrder = null;
+                state.playState.stepStartTime = Date.now();
+                renderView();
+            }
+        };
+
         function retryStep() { state.playState.feedbackMsg = null; renderView(); }
+        
         function confirmExit() { 
             showDialog("Voleu sortir de l'experiència?", "confirm", () => {
                 if (state.playState.tourId === 'temp-preview') {
@@ -1382,18 +1728,13 @@
                 }
             }); 
         }
-        function importTours(e) { const f = e.target.files[0]; const reader = new FileReader(); reader.onload = ev => { try { JSON.parse(ev.target.result).forEach(t => state.tours.push(t)); navigateTo('list'); } catch(err) { showDialog("Error JSON"); } }; reader.readAsText(f); }
 
-        // --- CÀMERA AR INTEGRADOR MINDAR ---
-        function parseGoogleDriveUrl(url, type) {
-            if (!url) return '';
-            const driveRegex = /(?:https:\/\/)?(?:drive\.google\.com\/)(?:file\/d\/|open\?id=)([\w-]+)/;
-            const match = url.match(driveRegex);
-            if (match && match[1]) {
-                const fileId = match[1];
-                return `https://drive.google.com/uc?export=download&id=${fileId}`;
+        function confirmSummaryExit() {
+            if (state.playState.tourId === 'temp-preview') {
+                navigateTo('create');
+            } else {
+                navigateTo('home');
             }
-            return url; 
         }
 
         function bufferToBase64(buffer) {
@@ -1407,51 +1748,48 @@
             return window.btoa(binary);
         }
 
-        function generateAFrameHTML(step, base64MindData) {
+        function parseGoogleDriveUrl(url, type) {
+            if (!url || url.startsWith('data:')) return url;
+            const match = url.match(/(?:https:\/\/)?(?:drive\.google\.com\/)(?:file\/d\/|open\?id=)([\w-]+)/);
+            if (match && match[1]) return type === 'image' ? `https://lh3.googleusercontent.com/d/${match[1]}` : `https://drive.google.com/uc?export=download&id=${match[1]}`;
+            return url; 
+        }
+
+        function generateAFrameHTML(step, b64DataOnly) {
             const cType = step.arType;
             const rawUrl = step.arContent;
             const cUrlSafe = parseGoogleDriveUrl(rawUrl, cType);
             
-            let assetsHtml = '<a-assets timeout="10000">\n';
+            let assetsHtml = '<a-assets timeout="10000">';
             let entityHtml = '';
-            let requiresAssets = false; 
-            let requiresMediaPlay = false;
-
-            const contentPosition = '0 0 0';
-            const contentRotation = '0 0 0';
-            const cScale = '1.0';
             
             if (cType === 'text') {
-                const cText = rawUrl.replace(/"/g, '&quot;');
-                entityHtml = `<a-entity dynamic-text="text: ${cText}; textColor: #ffffff; bgColor: #4f46e5; bgTransparent: false" position="${contentPosition}" rotation="${contentRotation}" scale="${cScale} ${cScale} ${cScale}"></a-entity>\n`;
+                const safeText = rawUrl.replace(/"/g, '&quot;').replace(/\n/g, ' ');
+                entityHtml = `<a-entity dynamic-text="text: ${safeText}; textColor: #ffffff; bgColor: #4f46e5" position="0 0 0" rotation="0 0 0"></a-entity>`;
             } else if (cType === 'image') {
-                entityHtml = `<a-entity dynamic-ar-image="src: ${cUrlSafe}" position="${contentPosition}" rotation="${contentRotation}"></a-entity>\n`;
+                entityHtml = `<a-entity robust-image="src: ${cUrlSafe}" position="0 0 0" rotation="0 0 0"></a-entity>`;
             } else if (cType === 'video') {
-                assetsHtml += `<video id="ar-media" src="${cUrlSafe}" crossorigin="anonymous" playsinline webkit-playsinline loop muted></video>\n`;
-                requiresAssets = true;
-                requiresMediaPlay = true;
-                entityHtml = `<a-video src="#ar-media" position="${contentPosition}" rotation="${contentRotation}" scale="${cScale} ${cScale} ${cScale}" material="side: double" auto-ratio media-handler="target: #ar-media"></a-video>\n`;
+                assetsHtml += `<video id="vid" src="${cUrlSafe}" crossorigin="anonymous" loop muted autoplay playsinline webkit-playsinline></video>`;
+                entityHtml = `<a-video src="#vid" position="0 0 0" rotation="0 0 0" scale="1 1 1" auto-ratio play-on-found></a-video>`;
             } else if (cType === 'audio') {
-                assetsHtml += `<audio id="ar-media" src="${cUrlSafe}" preload="auto" loop></audio>\n`;
-                requiresAssets = true;
-                requiresMediaPlay = true;
-                entityHtml = `<a-entity dynamic-text="text: 🔊; textColor: #ffffff; bgColor: #4f46e5; bgTransparent: false" position="${contentPosition}" rotation="${contentRotation}" scale="0.5 0.5 0.5" media-handler="target: #ar-media"></a-entity>\n`;
+                assetsHtml += `<audio id="aud" src="${cUrlSafe}" crossorigin="anonymous" loop></audio>`;
+                entityHtml = `<a-entity dynamic-text="text: 🔊 Àudio en Marxa; textColor: #ffffff; bgColor: #4f46e5" position="0 0 0"></a-entity><a-entity sound="src: #aud" play-on-found></a-entity>`;
             } else if (cType === '3d') {
-                entityHtml = `<a-entity gltf-model="${cUrlSafe}" position="${contentPosition}" rotation="${contentRotation}" animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear" auto-scale-model="userScale: ${cScale}"></a-entity>\n`;
+                entityHtml = `<a-entity gltf-model="${cUrlSafe}" position="0 0 0" rotation="0 0 0" auto-scale-model="userScale: 1.0" drag-rotate animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear"></a-entity>`;
             }
 
-            assetsHtml += '</a-assets>\n';
-            
-            if (!requiresAssets) assetsHtml = '';
+            assetsHtml += '</a-assets>';
 
-            const safeAssets = assetsHtml.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, " ");
-            const safeEntity = entityHtml.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, " ");
-
-            const uiHtml = `<div id="ui-layer" style="position: absolute; top: 20px; width: 100%; text-align: center; color: white; z-index: 100; pointer-events: none; text-shadow: 1px 1px 3px rgba(0,0,0,0.8); font-family: sans-serif;">
+            const uiHtml = `
+            <div id="ui-layer" style="position: absolute; top: 20px; width: 100%; text-align: center; color: white; z-index: 100; pointer-events: none; text-shadow: 1px 1px 3px rgba(0,0,0,0.8); font-family: sans-serif;">
                 <h2>Enfoqueu l'activador per interactuar</h2>
+            </div>
+            <div id="cam-error" style="display:none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: white; z-index: 99999; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; font-family: sans-serif;">
+                <h3 style="color: #ef4444; margin-bottom: 10px;">Accés a la càmera denegat o no disponible</h3>
+                <p style="font-size: 14px; max-width: 400px;">Si heu obert aquest fitxer directament (file://), els navegadors bloquegen la càmera per seguretat. Pugeu el fitxer a un servidor web o utilitzeu un entorn local (localhost).</p>
             </div>`;
 
-            const sEnd = "<" + "/script>";
+            const sEnd = "</" + "script>";
 
             return `<!DOCTYPE html>
             <html lang="ca">
@@ -1459,131 +1797,26 @@
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>AR Experience</title>
+                <style>body { margin: 0; overflow: hidden; background: transparent; } #cam-error { display: none !important; }</style>
+                <script>
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        document.addEventListener("DOMContentLoaded", function() {
+                            var errDiv = document.getElementById('cam-error');
+                            if (errDiv) errDiv.style.display = 'flex';
+                            var uiLayer = document.getElementById('ui-layer');
+                            if (uiLayer) uiLayer.style.display = 'none';
+                        });
+                    }
+                ${sEnd}
                 <script src="https://aframe.io/releases/1.4.2/aframe.min.js">${sEnd}
                 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js">${sEnd}
-                <style>body { margin: 0; overflow: hidden; background: #000; }</style>
                 <script>
-                    
-                    // COMPONENT AR-IMAGE-DISPLAY: Càrrega intel·ligent per saltar-se les restriccions del WebGL i ajustar l'aspecte perfectament.
-                    AFRAME.registerComponent('dynamic-ar-image', {
-                        schema: { src: {type: 'string'} },
+                    AFRAME.registerComponent('ar-event-handler', {
                         init: function () {
-                            this.el.setAttribute('visible', 'false');
-                            this.loaded = false;
-                            
-                            const marker = this.el.closest('[mindar-image-target]');
-                            if (marker) {
-                                marker.addEventListener('targetFound', () => {
-                                    if (!this.loaded) this.loadImage();
-                                });
-                            }
-                        },
-                        loadImage: async function() {
-                            const url = this.data.src;
-                            
-                            const loadViaImage = (u) => new Promise((resolve, reject) => {
-                                const img = new Image();
-                                img.crossOrigin = "anonymous";
-                                img.onload = () => resolve(img);
-                                img.onerror = () => reject(new Error('Failed to load'));
-                                img.src = u;
+                            const target = this.el;
+                            target.addEventListener('targetFound', () => {
+                                window.parent.postMessage('arTargetFound', '*');
                             });
-
-                            const loadViaFetch = async (u) => {
-                                const res = await fetch(u);
-                                if (!res.ok) throw new Error('Fetch failed');
-                                const blob = await res.blob();
-                                const b64 = await new Promise((resolve, reject) => {
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => resolve(reader.result);
-                                    reader.onerror = reject;
-                                    reader.readAsDataURL(blob);
-                                });
-                                return new Promise((res, rej) => { 
-                                    const img = new Image();
-                                    img.onload = () => res(img);
-                                    img.onerror = rej;
-                                    img.src = b64; 
-                                });
-                            };
-
-                            const enc = encodeURIComponent(url);
-                            const strategies = [];
-                            
-                            if (url.startsWith('data:')) {
-                                strategies.push(() => loadViaImage(url));
-                            } else {
-                                strategies.push(
-                                    () => loadViaImage(url),
-                                    () => loadViaImage('https://images.weserv.nl/?url=' + enc),
-                                    () => loadViaFetch('https://api.allorigins.win/raw?url=' + enc),
-                                    () => loadViaFetch('https://api.codetabs.com/v1/proxy/?quest=' + enc),
-                                    () => loadViaImage('https://corsproxy.io/?' + enc)
-                                );
-                            }
-
-                            let loadedImg = null;
-                            
-                            for (let i = 0; i < strategies.length; i++) {
-                                try {
-                                    loadedImg = await strategies[i]();
-                                    if (loadedImg && loadedImg.width > 0) break;
-                                } catch (e) {
-                                    console.warn("Intent de descàrrega descartat.");
-                                }
-                            }
-
-                            if (!loadedImg || loadedImg.width === 0) {
-                                console.error("Error AR: El servidor ha bloquejat la textura (CORS).");
-                                return;
-                            }
-
-                            const ratio = loadedImg.height / loadedImg.width;
-                            this.el.setAttribute('geometry', 'primitive: plane; width: 1; height: ' + ratio);
-
-                            const texture = new THREE.Texture(loadedImg);
-                            texture.needsUpdate = true;
-                            if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-                            else if (THREE.sRGBEncoding) texture.encoding = THREE.sRGBEncoding;
-                            texture.minFilter = THREE.LinearFilter;
-
-                            const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
-                            this.el.getObject3D('mesh').material = material;
-                            
-                            this.el.setAttribute('visible', 'true');
-                            this.loaded = true;
-                        }
-                    });
-
-                    AFRAME.registerComponent('auto-ratio', {
-                        init: function () {
-                            const el = this.el; let ratioApplied = false;
-                            const applyRatio = (w, h) => { if (w && h && !ratioApplied) { const ratio = w / h; el.setAttribute('width', ratio); el.setAttribute('height', 1); ratioApplied = true; } };
-                            
-                            const srcId = el.getAttribute('src');
-                            if (srcId && srcId.startsWith('#')) {
-                                const assetEl = document.querySelector(srcId);
-                                if (assetEl && assetEl.tagName.toLowerCase() === 'img') {
-                                    if (assetEl.complete && assetEl.naturalWidth) applyRatio(assetEl.naturalWidth, assetEl.naturalHeight);
-                                    else assetEl.addEventListener('load', () => applyRatio(assetEl.naturalWidth, assetEl.naturalHeight));
-                                }
-                            }
-
-                            el.addEventListener('materialtextureloaded', () => {
-                                const material = el.components.material && el.components.material.material;
-                                if (material && material.map && material.map.image && !material.map.image.videoWidth) applyRatio(material.map.image.width, material.map.image.height);
-                            });
-                            
-                            if (el.tagName.toLowerCase() === 'a-video') {
-                                if (srcId && srcId.startsWith('#')) {
-                                    const videoEl = document.querySelector(srcId);
-                                    if (videoEl) {
-                                        const checkAndApply = () => { if (videoEl.videoWidth > 0) applyRatio(videoEl.videoWidth, videoEl.videoHeight); };
-                                        videoEl.addEventListener('loadedmetadata', checkAndApply); videoEl.addEventListener('playing', checkAndApply); videoEl.addEventListener('canplay', checkAndApply);
-                                        const fallbackCheck = setInterval(() => { if (ratioApplied) clearInterval(fallbackCheck); else checkAndApply(); }, 500);
-                                    }
-                                }
-                            }
                         }
                     });
 
@@ -1591,89 +1824,265 @@
                         schema: { userScale: {type: 'number', default: 1.0} },
                         init: function () {
                             let scaleApplied = false;
-                            let retries = 0;
-                            const applyScale = () => {
-                                if (scaleApplied || retries > 20) return;
+                            this.el.addEventListener('model-loaded', () => {
+                                if (scaleApplied) return;
                                 const model = this.el.getObject3D('mesh');
-                                if (!model) { retries++; setTimeout(applyScale, 200); return; }
+                                if (!model) return;
+                                
                                 const clone = model.clone();
-                                clone.position.set(0,0,0); clone.rotation.set(0,0,0); clone.scale.set(1,1,1); clone.updateMatrixWorld(true);
+                                clone.position.set(0,0,0);
+                                clone.rotation.set(0,0,0);
+                                clone.scale.set(1,1,1);
+                                clone.updateMatrixWorld(true);
                                 clone.traverse(node => { if (node.isMesh && node.geometry) node.geometry.computeBoundingBox(); });
+                                
                                 const box = new THREE.Box3().setFromObject(clone);
                                 const size = new THREE.Vector3(); box.getSize(size);
                                 const center = new THREE.Vector3(); box.getCenter(center);
-                                if (size.length() === 0) { retries++; setTimeout(applyScale, 200); return; }
+                                
                                 const maxDim = Math.max(size.x, size.y, size.z);
                                 if (maxDim > 0 && maxDim !== Infinity && !isNaN(maxDim)) {
                                     const targetScale = this.data.userScale / maxDim;
                                     this.el.setAttribute('scale', targetScale + ' ' + targetScale + ' ' + targetScale);
-                                    model.position.set(-center.x, -center.y, -center.z + (size.z / 2) + 0.05);
+                                    model.position.set(-center.x, -center.y, -center.z);
                                     scaleApplied = true;
                                 }
+                            });
+                        }
+                    });
+
+                    AFRAME.registerComponent('robust-image', {
+                        schema: { src: { type: 'string' } },
+                        init: function () {
+                            const el = this.el;
+                            const originalUrl = this.data.src;
+                            if (!originalUrl) return;
+
+                            const urlsToTry = [
+                                originalUrl,
+                                'https://corsproxy.io/?' + encodeURIComponent(originalUrl),
+                                'https://images.weserv.nl/?url=' + encodeURIComponent(originalUrl),
+                                'https://api.allorigins.win/raw?url=' + encodeURIComponent(originalUrl)
+                            ];
+
+                            let currentAttempt = 0;
+                            const loader = new THREE.TextureLoader();
+                            loader.setCrossOrigin('anonymous');
+
+                            const applyTexture = (img, textureObj) => {
+                                let tex = textureObj;
+                                if (!tex) {
+                                    tex = new THREE.Texture(img);
+                                    tex.needsUpdate = true;
+                                }
+                                const material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true });
+                                
+                                const w = img.width || img.videoWidth || img.naturalWidth;
+                                const h = img.height || img.videoHeight || img.naturalHeight;
+                                if (w && h) {
+                                    el.setObject3D('mesh', new THREE.Mesh(new THREE.PlaneGeometry(1, h / w), material));
+                                } else {
+                                    el.setObject3D('mesh', new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material));
+                                }
                             };
-                            this.el.addEventListener('model-loaded', () => setTimeout(applyScale, 100));
+
+                            const tryFetchBase64 = async (url) => {
+                                try {
+                                    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+                                    const response = await fetch(proxyUrl);
+                                    if (!response.ok) throw new Error('Fetch fallit');
+                                    const blob = await response.blob();
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                        const img = new Image();
+                                        img.onload = () => applyTexture(img);
+                                        img.src = reader.result;
+                                    };
+                                    reader.readAsDataURL(blob);
+                                } catch (e) {
+                                    console.error('Error carregant imatge AR');
+                                }
+                            };
+
+                            const tryNextUrl = () => {
+                                if (currentAttempt >= urlsToTry.length) {
+                                    tryFetchBase64(originalUrl);
+                                    return;
+                                }
+                                const url = urlsToTry[currentAttempt];
+                                currentAttempt++;
+                                
+                                loader.load(
+                                    url,
+                                    (texture) => applyTexture(texture.image, texture),
+                                    undefined,
+                                    (err) => { tryNextUrl(); }
+                                );
+                            };
+                            tryNextUrl();
                         }
                     });
 
                     AFRAME.registerComponent('dynamic-text', {
-                        schema: { text: {type: 'string', default: ''}, textColor: {type: 'string', default: '#ffffff'}, bgColor: {type: 'string', default: '#000000'}, bgTransparent: {type: 'boolean', default: false} },
+                        schema: { text: {type: 'string', default: ''}, textColor: {type: 'string', default: '#ffffff'}, bgColor: {type: 'string', default: '#000000'}, transparent: {type: 'boolean', default: false} },
                         init: function () {
-                            const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 1024; const ctx = canvas.getContext('2d');
-                            if (!this.data.bgTransparent) { ctx.fillStyle = this.data.bgColor; ctx.globalAlpha = 0.85; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.globalAlpha = 1.0; }
-                            ctx.fillStyle = this.data.textColor; const isIcon = this.data.text.trim() === '🔊';
-                            ctx.font = isIcon ? 'bold 400px sans-serif' : 'bold 56px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                            if (isIcon) { ctx.fillText(this.data.text, canvas.width / 2, canvas.height / 2); } else {
-                                const lines = [];
-                                this.data.text.split(/\\\\n|\\n/).forEach(manualLine => {
-                                    let currentLine = '';
-                                    manualLine.split(' ').forEach(word => {
-                                        let testLine = currentLine + word + ' ';
-                                        if (ctx.measureText(testLine).width > 900 && currentLine !== '') { lines.push(currentLine); currentLine = word + ' '; } else currentLine = testLine;
-                                    }); lines.push(currentLine);
-                                });
-                                const startY = (canvas.height / 2) - ((lines.length - 1) * 75 / 2);
-                                lines.forEach((line, i) => ctx.fillText(line.trim(), canvas.width / 2, startY + (i * 75)));
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 1024;
+                            canvas.height = 1024;
+                            const ctx = canvas.getContext('2d');
+                            
+                            if (!this.data.transparent) {
+                                ctx.fillStyle = this.data.bgColor;
+                                ctx.globalAlpha = 0.85;
+                                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                ctx.globalAlpha = 1.0;
                             }
+                            
+                            ctx.fillStyle = this.data.textColor;
+                            ctx.font = 'bold 60px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            
+                            const words = this.data.text.split(' ');
+                            let line = '';
+                            const lines = [];
+                            
+                            for(let n = 0; n < words.length; n++) {
+                                const testLine = line + words[n] + ' ';
+                                const metrics = ctx.measureText(testLine);
+                                if (metrics.width > 900 && n > 0) {
+                                    lines.push(line);
+                                    line = words[n] + ' ';
+                                } else {
+                                    line = testLine;
+                                }
+                            }
+                            lines.push(line);
+                            
+                            const lineHeight = 80;
+                            const startY = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2);
+                            for(let k = 0; k < lines.length; k++) {
+                                ctx.fillText(lines[k].trim(), canvas.width / 2, startY + (k * lineHeight));
+                            }
+                            
                             const texture = new THREE.CanvasTexture(canvas);
                             const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
-                            this.el.setObject3D('mesh', new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material));
+                            this.el.setObject3D('mesh', new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
                         }
                     });
 
-                    ${requiresMediaPlay ? `
-                    AFRAME.registerComponent('media-handler', {
-                        schema: { target: {type: 'string'} },
+                    AFRAME.registerComponent('drag-rotate', {
                         init: function () {
-                            const marker = this.el.closest('[mindar-image-target]'); const mediaEl = document.querySelector(this.data.target);
-                            const onFound = () => { if (mediaEl) setTimeout(() => { mediaEl.play().catch(e => console.warn(e)); }, 150); };
-                            const onLost = () => { if (mediaEl) mediaEl.pause(); };
-                            if (marker) { marker.addEventListener('targetFound', onFound); marker.addEventListener('targetLost', onLost); }
-                        }
-                    });` : ''}
-                    
-                    AFRAME.registerComponent('marker-handler', {
-                        init: function() {
-                            const ui = document.getElementById('ui-layer');
-                            this.el.addEventListener('targetFound', () => { if(ui) ui.style.display = 'none'; });
-                            this.el.addEventListener('targetLost', () => { if(ui) ui.style.display = 'block'; });
+                            this.isDragging = false;
+                            this.previousPosition = { x: 0, y: 0 };
+                            
+                            const onDown = (e) => {
+                                this.isDragging = true;
+                                const touch = e.touches ? e.touches[0] : e;
+                                this.previousPosition.x = touch.clientX;
+                                this.previousPosition.y = touch.clientY;
+                            };
+                            
+                            const onUp = () => { this.isDragging = false; };
+                            
+                            const onMove = (e) => {
+                                if (!this.isDragging) return;
+                                const touch = e.touches ? e.touches[0] : e;
+                                const deltaMove = {
+                                    x: touch.clientX - this.previousPosition.x,
+                                    y: touch.clientY - this.previousPosition.y
+                                };
+                                
+                                const rotation = this.el.getAttribute('rotation');
+                                this.el.setAttribute('rotation', {
+                                    x: rotation.x - deltaMove.y * 0.5,
+                                    y: rotation.y + deltaMove.x * 0.5,
+                                    z: rotation.z
+                                });
+                                
+                                this.previousPosition.x = touch.clientX;
+                                this.previousPosition.y = touch.clientY;
+                            };
+                            
+                            document.addEventListener('mousedown', onDown);
+                            document.addEventListener('touchstart', onDown, {passive: true});
+                            document.addEventListener('mouseup', onUp);
+                            document.addEventListener('touchend', onUp);
+                            document.addEventListener('mousemove', onMove);
+                            document.addEventListener('touchmove', onMove, {passive: true});
                         }
                     });
 
-                    function b64toBlob(b64Data, contentType='', sliceSize=512) {
-                        const byteCharacters = atob(b64Data);
-                        const byteArrays = [];
-                        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-                            const slice = byteCharacters.slice(offset, offset + sliceSize);
-                            const byteNumbers = new Array(slice.length);
-                            for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
-                            byteArrays.push(new Uint8Array(byteNumbers));
+                    AFRAME.registerComponent('auto-ratio', {
+                        init: function () {
+                            const el = this.el; 
+                            let ratioApplied = false;
+                            const applyRatio = (w, h) => { 
+                                if (w && h && !ratioApplied) { 
+                                    el.setAttribute('width', 1);
+                                    el.setAttribute('height', h / w);
+                                    ratioApplied = true; 
+                                } 
+                            };
+                            if (el.tagName.toLowerCase() === 'a-video') {
+                                const srcId = el.getAttribute('src');
+                                if (srcId && srcId.startsWith('#')) {
+                                    const videoEl = document.querySelector(srcId);
+                                    if (videoEl) {
+                                        const checkAndApply = () => { if (videoEl.videoWidth > 0) applyRatio(videoEl.videoWidth, videoEl.videoHeight); };
+                                        videoEl.addEventListener('loadedmetadata', checkAndApply);
+                                        videoEl.addEventListener('playing', checkAndApply);
+                                    }
+                                }
+                            }
                         }
-                        return new Blob(byteArrays, {type: contentType});
-                    }
+                    });
 
+                    AFRAME.registerComponent('play-on-found', {
+                        init: function () {
+                            var el = this.el;
+                            var target = document.querySelector('[mindar-image-target]');
+                            target.addEventListener('targetFound', () => {
+                                if (el.tagName === 'A-VIDEO') {
+                                    var vid = document.querySelector('#vid');
+                                    if(vid) vid.play();
+                                } else if (el.components.sound) {
+                                    el.components.sound.playSound();
+                                }
+                            });
+                            target.addEventListener('targetLost', () => {
+                                if (el.tagName === 'A-VIDEO') {
+                                    var vid = document.querySelector('#vid');
+                                    if(vid) vid.pause();
+                                } else if (el.components.sound) {
+                                    el.components.sound.pauseSound();
+                                }
+                            });
+                        }
+                    });
+                ${sEnd}
+            </head>
+            <body>
+                ${uiHtml}
+                <script>
                     document.addEventListener("DOMContentLoaded", function() {
-                        const b64Data = "${base64MindData}";
-                        const blob = b64toBlob(b64Data, 'application/octet-stream');
+                        
+                        function b64toBlob(b64Data, contentType = '', sliceSize = 1024) {
+                            const byteCharacters = atob(b64Data);
+                            const byteArrays = [];
+                            for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+                                const slice = byteCharacters.slice(offset, offset + sliceSize);
+                                const byteNumbers = new Array(slice.length);
+                                for (let i = 0; i < slice.length; i++) {
+                                    byteNumbers[i] = slice.charCodeAt(i);
+                                }
+                                byteArrays.push(new Uint8Array(byteNumbers));
+                            }
+                            return new Blob(byteArrays, {type: contentType});
+                        }
+
+                        const b64DataStr = "${b64DataOnly}";
+                        const blob = b64toBlob(b64DataStr, 'application/octet-stream');
                         const blobUrl = URL.createObjectURL(blob);
 
                         const sceneEl = document.createElement('a-scene');
@@ -1682,23 +2091,37 @@
                         sceneEl.setAttribute('renderer', 'colorManagement: true, physicallyCorrectLights');
                         sceneEl.setAttribute('vr-mode-ui', 'enabled: false');
                         sceneEl.setAttribute('device-orientation-permission-ui', 'enabled: false');
+                        
+                        sceneEl.setAttribute('gltf-model', 'dracoDecoderPath: https://www.gstatic.com/draco/v1/decoders/; meshoptDecoderPath: https://unpkg.com/meshoptimizer@0.19.0/meshopt_decoder.js; basisTranscoderPath: https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/jsm/libs/basis/;');
 
                         sceneEl.innerHTML = '<a-camera position="0 0 0" look-controls="enabled: false"></a-camera>' + 
-                                            '${safeAssets}' + 
-                                            '<a-entity mindar-image-target="targetIndex: 0" marker-handler>${safeEntity}</a-entity>';
+                                            '<a-light type="ambient" color="#ffffff" intensity="1.5"></a-light>' +
+                                            '<a-light type="directional" color="#ffffff" intensity="1" position="-1 2 1"></a-light>' +
+                                            \`${assetsHtml}\` + 
+                                            '<a-entity mindar-image-target="targetIndex: 0" ar-event-handler>' + 
+                                            \`${entityHtml}\` + 
+                                            '</a-entity>';
                                             
                         document.body.appendChild(sceneEl);
                         
-                        // Unlock media with click
                         document.body.addEventListener('click', () => {
                             const AudioContext = window.AudioContext || window.webkitAudioContext;
                             if (AudioContext) { const ctx = new AudioContext(); ctx.resume(); }
-                            document.querySelectorAll('video, audio').forEach(el => { if(el.tagName === 'VIDEO') el.muted = false; el.load(); });
                         }, {once: true});
+                        
+                        setTimeout(() => {
+                            const target = document.querySelector('[mindar-image-target]');
+                            if(target) {
+                                target.addEventListener('targetFound', () => { 
+                                    document.getElementById('ui-layer').style.display = 'none'; 
+                                });
+                                target.addEventListener('targetLost', () => { document.getElementById('ui-layer').style.display = 'block'; });
+                            }
+                        }, 1000);
+                        
                     });
                 ${sEnd}
-            </head>
-            <body>${uiHtml}</body>
+            </body>
             </html>`;
         }
 
@@ -1716,6 +2139,8 @@
                 return;
             }
 
+            // OBRIR INTERFÍCIE IMMEDIATAMENT PERQUÈ LA PERSONA VEGI QUE EL BOTÓ HA REACCIONAT
+            window.arTriggerDetected = false;
             container.classList.remove('hidden');
             scanUI.classList.remove('hidden');
             overlay.classList.add('hidden');
@@ -1724,13 +2149,28 @@
                 <div class="flex flex-col justify-center items-center h-full text-white w-full max-w-md mx-auto p-4 text-center">
                     <i class="ph ph-spinner animate-spin text-6xl text-emerald-500 mb-6"></i>
                     <h2 class="text-2xl font-bold mb-2 tracking-wide">Iniciant Càmera i Entorn AR...</h2>
-                    <div class="w-full h-3 bg-gray-700 rounded-full overflow-hidden shadow-inner mt-6">
+                    <p class="text-gray-300 text-sm mb-4">S'està preparant la detecció visual amb MindAR.</p>
+                    <p id="camera-warning" class="text-yellow-400 text-xs mb-4 font-bold max-w-xs"></p>
+                    <div class="w-full h-3 bg-gray-700 rounded-full overflow-hidden shadow-inner">
                         <div id="compilerProgressBar" class="h-full bg-emerald-500 w-0 transition-all duration-300"></div>
                     </div>
                     <p id="compilerProgressText" class="text-emerald-300 font-mono text-sm mt-3 font-semibold">0%</p>
                 </div>
                 <button onclick="closeARCamera(true)" class="absolute top-6 right-6 w-14 h-14 bg-white/20 backdrop-blur text-white rounded-full flex items-center justify-center z-[200]"><i class="ph-bold ph-x text-2xl"></i></button>
             `;
+
+            // Demanar permís de càmera en segon pla només si som a l'editor.
+            // No bloqueja l'execució (sense "await") així el MindAR pot anar compilant la imatge.
+            if (!window.isAutonomous) {
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                        .then(stream => stream.getTracks().forEach(t => t.stop()))
+                        .catch(err => {
+                            const warnEl = document.getElementById('camera-warning');
+                            if (warnEl) warnEl.innerText = "Si us plau, autoritzeu l'ús de la càmera al navegador per continuar.";
+                        });
+                }
+            }
 
             try {
                 const img = new Image();
@@ -1755,31 +2195,102 @@
                 const exportedBuffer = await compiler.exportData();
                 const base64MindData = bufferToBase64(exportedBuffer);
                 
-                // Ara la generació HTML és completament asíncrona a l'interior de l'iframe, sense esperes molestes
                 const finalHtml = generateAFrameHTML(step, base64MindData);
                 
                 scanUI.classList.add('hidden'); 
                 
                 overlay.innerHTML = `
-                    <iframe id="ar-iframe" allow="camera; microphone; accelerometer; magnetometer; gyroscope; display-capture" class="w-full h-full border-0 absolute inset-0 z-10" style="background: black;"></iframe>
-                    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 z-[200]">
-                        <button onclick="closeARCamera(false)" class="px-8 py-4 bg-emerald-600 text-white font-bold rounded-full shadow-2xl border border-emerald-500 flex items-center gap-2 hover:bg-emerald-500 transition hover:scale-105">
-                            Continuar <i class="ph-bold ph-arrow-right"></i>
+                    <iframe id="ar-iframe" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" allow="camera *; microphone *; accelerometer *; magnetometer *; gyroscope *; display-capture *; autoplay *; fullscreen *; xr-spatial-tracking *" class="w-full h-full border-0 absolute inset-0 z-10" style="background: transparent;"></iframe>
+                    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 z-[200] flex gap-3">
+                        <button id="ar-dual-btn" onclick="handleARAction()" class="px-8 py-4 bg-orange-500 text-white font-bold rounded-full shadow-2xl border border-orange-400 flex items-center gap-2 hover:bg-orange-400 transition hover:scale-105">
+                            Pista <i class="ph-bold ph-lightbulb"></i>
+                        </button>
+                        <button id="ar-skip-btn" onclick="skipARActivity()" class="px-6 py-4 bg-slate-700 text-white font-bold rounded-full shadow-2xl border border-slate-600 flex items-center gap-2 hover:bg-slate-600 transition hover:scale-105" title="Saltar activitat">
+                            Saltar <i class="ph-bold ph-fast-forward"></i>
                         </button>
                     </div>
                 `;
                 overlay.classList.remove('hidden');
 
                 const iframe = document.getElementById('ar-iframe');
-                iframe.contentWindow.document.open();
-                iframe.contentWindow.document.write(finalHtml);
-                iframe.contentWindow.document.close();
+                iframe.srcdoc = finalHtml;
+
+                logInteraction('Detecta AR', 'Càmera Iniciada amb MindAR', 0);
 
             } catch(e) {
                 console.error("Error AR:", e);
                 showDialog("S'ha produït un error al compilar l'entorn AR.");
                 closeARCamera(true);
             }
+        }
+
+        function handleARAction() {
+            if (window.arTriggerDetected) {
+                closeARCamera(false);
+            } else {
+                const step = state.tours.find(t => t.id === state.playState.tourId).steps[state.playState.currentStep];
+                showDialog(`
+                    <div class="flex flex-col items-center gap-4">
+                        <p class="text-sm font-bold text-slate-600 uppercase">Imatge d'activació</p>
+                        <img src="${step.triggerImageB64}" class="max-h-64 rounded-xl border-4 border-slate-100 shadow-sm">
+                        <p class="text-xs text-slate-500">Busqueu aquesta imatge i enfoqueu-la amb la càmera per activar el contingut.</p>
+                    </div>
+                `, 'alert');
+            }
+        }
+
+        window.addEventListener('message', (event) => {
+            if (event.data === 'arTargetFound') {
+                if (!window.arTriggerDetected) {
+                    window.arTriggerDetected = true;
+                    
+                    const btn = document.getElementById('ar-dual-btn');
+                    const skipBtn = document.getElementById('ar-skip-btn');
+                    if (btn) {
+                        btn.innerHTML = 'Continuar <i class="ph-bold ph-arrow-right"></i>';
+                        btn.classList.remove('bg-orange-500', 'border-orange-400', 'hover:bg-orange-400');
+                        btn.classList.add('bg-emerald-600', 'border-emerald-500', 'hover:bg-emerald-500');
+                    }
+                    if (skipBtn) {
+                        skipBtn.classList.add('hidden');
+                    }
+
+                    if (state.view === 'play' && state.playState.tourId) {
+                        const stepIndex = state.playState.currentStep;
+                        const tour = state.tours.find(t => t.id === state.playState.tourId);
+                        if (tour && tour.steps && tour.steps[stepIndex]) {
+                            const step = tour.steps[stepIndex];
+                            if (!state.playState.attempts) state.playState.attempts = {};
+                            if (!state.playState.attempts[stepIndex]) {
+                                state.playState.attempts[stepIndex] = 1;
+                                state.playState.score += (step.scoreFirstTry !== undefined ? step.scoreFirstTry : 10);
+                                logInteraction('AR Completada', 'Imatge Detectada', state.playState.score);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        function skipARActivity() {
+            showDialog("Voleu saltar aquesta activitat d'exploració? L'activitat quedarà omesa.", "confirm", () => {
+                const step = state.tours.find(t => t.id === state.playState.tourId).steps[state.playState.currentStep];
+                logInteraction('Salta AR', 'Activitat omesa', 0);
+                
+                document.getElementById('ar-fullscreen-container').classList.add('hidden');
+                document.getElementById('ar-scan-ui').innerHTML = ''; 
+                document.getElementById('ar-content-overlay').innerHTML = ''; 
+                
+                const isRequired = step.requireCorrect !== undefined ? step.requireCorrect : false;
+
+                if (isRequired) {
+                    state.playState.feedbackMsg = "Activitat omesa. És necessari completar-la per avançar.";
+                    state.playState.feedbackType = 'error';
+                    renderView();
+                } else {
+                    nextStep();
+                }
+            });
         }
 
         function closeARCamera(skipNextStep = false) {
@@ -1791,6 +2302,65 @@
                 nextStep(); 
             }
         }
+        
+        window.state = state;
+        window.renderAll = renderAll;
+        window.renderView = renderView;
+        window.renderModal = renderModal;
+        window.renderDialogUI = renderDialogUI;
+        window.showDialog = showDialog;
+        window.closeDialog = closeDialog;
+        window.renderHome = renderHome;
+        window.renderList = renderList;
+        window.renderStepPreviewSimulator = renderStepPreviewSimulator;
+        window.renderCreate = renderCreate;
+        window.setPreviewStep = setPreviewStep;
+        window.handleTriggerUpload = handleTriggerUpload;
+        window.renderDynamicModal = renderDynamicModal;
+        window.renderPlay = renderPlay;
+        window.renderSummary = renderSummary;
+        window.navigateTo = navigateTo;
+        window.getVisualsForStepType = getVisualsForStepType;
+        window.initMapForCreation = initMapForCreation;
+        window.updateMapCircle = updateMapCircle;
+        window.initMapForPlay = initMapForPlay;
+        window.toggleGeoPanel = toggleGeoPanel;
+        window.verifyGeoPosition = verifyGeoPosition;
+        window.getDistanceFromLatLonInM = getDistanceFromLatLonInM;
+        window.openModal = openModal;
+        window.closeModal = closeModal;
+        window.saveStepFromModal = saveStepFromModal;
+        window.removeStep = removeStep;
+        window.moveStep = moveStep;
+        window.moveSortItem = moveSortItem;
+        window.addQuizOption = addQuizOption;
+        window.removeQuizOption = removeQuizOption;
+        window.startCreation = startCreation;
+        window.editTour = editTour;
+        window.finalizeSaveTour = finalizeSaveTour;
+        window.triggerDownloadJSON = triggerDownloadJSON;
+        window.generateAutonomousHTML = generateAutonomousHTML;
+        window.logInteraction = logInteraction;
+        window.sendFinalLogs = sendFinalLogs;
+        window.checkTourAccess = checkTourAccess;
+        window.startTour = startTour;
+        window.previewFromStep = previewFromStep;
+        window.answerQuiz = answerQuiz;
+        window.verifyText = verifyText;
+        window.verifySort = verifySort;
+        window.answerSurvey = answerSurvey;
+        window.nextStep = nextStep;
+        window.retryStep = retryStep;
+        window.confirmExit = confirmExit;
+        window.confirmSummaryExit = confirmSummaryExit;
+        window.importTours = importTours;
+        window.bufferToBase64 = bufferToBase64;
+        window.parseGoogleDriveUrl = parseGoogleDriveUrl;
+        window.generateAFrameHTML = generateAFrameHTML;
+        window.startARCamera = startARCamera;
+        window.closeARCamera = closeARCamera;
+        window.skipARActivity = skipARActivity;
+        window.syncModalState = syncModalState;
     </script>
 </body>
 </html>
