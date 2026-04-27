@@ -588,11 +588,11 @@
                     </div>
                     <button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això verificaria si heu col·locat correctament els elements (mitjançant arrossegament drag & drop).')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold mt-4">Comprovar Ordre</button></div>`;
             } else if (step.type === 'ar_exp') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase mb-2 block">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p><img id="media-continue-btn" src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button onclick="showDialog('Aquí s\\'obriria la càmera per buscar la imatge d\\'activació.')" class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-cube text-2xl"></i></div><span class="text-[10px] font-bold text-teal-500 uppercase mb-2 block">Realitat Augmentada</span><p class="text-xs font-semibold mb-4">${step.instruction}</p>${mediaHtml}<img id="media-continue-btn" src="${step.triggerImageB64 || defaultB64}" class="h-20 mx-auto mb-4 rounded-lg border-2 border-slate-100 object-cover"><button onclick="showDialog('Aquí s\\'obriria la càmera per buscar la imatge d\\'activació.')" class="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm">Obrir Escàner</button></div>`;
             } else if (step.type === 'find_spot') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p><div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button onclick="showDialog('Comprovaria la posició de la persona usuària mitjançant la geolocalització del mòbil.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-map-pin text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.locationHint}</p>${mediaHtml}<div class="h-20 bg-slate-200 rounded-xl mb-4"></div><button onclick="showDialog('Comprovaria la posició de la persona usuària mitjançant la geolocalització del mòbil.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar Ubicació</button></div>`;
             } else if (step.type === 'scan_code') {
-                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p><input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això compararia el text introduït amb el codi exacte de validació.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
+                 contentHtml = `<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 text-center"><div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2"><i class="ph-fill ph-qr-code text-2xl"></i></div><p class="text-xs font-semibold mb-4">${step.instruction}</p>${mediaHtml}<input type="text" class="w-full p-3 bg-slate-50 border-2 rounded-xl mb-4" placeholder="CODI..."><button id="media-continue-btn" ${hideBtnStyle} onclick="showDialog('Això compararia el text introduït amb el codi exacte de validació.')" class="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-sm">Validar</button></div>`;
             } else if (step.type === 'survey') {
                  contentHtml = `<div class="bg-white p-5 rounded-2xl border border-slate-200 mb-4"><h3 class="font-bold text-sm mb-3">${step.question}</h3>${mediaHtml}<div class="space-y-2">${step.options.filter(o=>o).map(o=>`<button onclick="showDialog('L\\'opció escollida seria registrada per a la posterior avaluació.')" class="w-full p-3 border-2 rounded-xl text-slate-700 text-sm font-medium text-left">${o}</button>`).join('')}</div></div>`;
             }
@@ -938,6 +938,7 @@
             const maxScoreSoFar = tour.steps.slice(0, state.playState.currentStep + 1).reduce((acc, s) => acc + getStepMaxScore(s), 0);
 
             let mainContent = '';
+            let media = renderMedia(step);
             
             const isMediaRestricted = (step.mediaType === 'video' || step.mediaType === 'audio') && !getEmbedUrl(step.mediaUrl).includes('embed');
             const hideBtnStyle = isMediaRestricted ? 'style="display:none"' : '';
@@ -951,6 +952,7 @@
                         <div class="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 pulse-red"><i class="ph-fill ph-map-pin text-4xl"></i></div>
                         <h2 class="text-2xl font-bold mb-4">Contingut Bloquejat</h2>
                         <p class="text-slate-600 mb-8">Heu d'arribar a la ubicació per poder veure aquesta part de l'aventura.</p>
+                        ${media}
                         <div id="playMap" class="w-full h-48 bg-slate-200 rounded-2xl mb-8"></div>
                         <button onclick="verifyGeoPosition()" id="verifyBtn" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2">
                             <i class="ph-bold ph-crosshair"></i> Validar Ubicació
@@ -972,7 +974,6 @@
                     </div>
                 `;
             } else {
-                let media = renderMedia(step);
                 if (step.type === 'web') {
                     mainContent = `<div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
                         ${media}
@@ -1034,7 +1035,7 @@
                             </div>
                             <span class="text-xs font-bold text-teal-500 uppercase tracking-widest mb-2 block">Experiència de Realitat Augmentada</span>
                             <p class="text-lg font-semibold text-slate-800 mb-6">${step.instruction}</p>
-                            
+                            ${media}
                             <div class="mb-6 relative inline-block">
                                 <span class="text-xs font-bold text-slate-400 mb-2 block">Imatge de Referència que heu de trobar i enfocar</span>
                                 <img src="${step.triggerImageB64 || defaultB64}" class="max-h-48 rounded-xl border-4 border-slate-100 mx-auto shadow-sm" onerror="this.style.display='none'">
@@ -1051,6 +1052,7 @@
                             <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><i class="ph-fill ph-qr-code text-3xl"></i></div>
                             <h3 class="text-xl font-bold mb-6">Codi de Validació</h3>
                             <p class="text-slate-600 mb-6">${step.instruction}</p>
+                            ${media}
                             <input type="text" id="playInput" class="w-full text-center text-xl font-mono uppercase tracking-widest p-4 bg-slate-50 border-2 rounded-2xl mb-6" placeholder="CODI...">
                             <button id="media-continue-btn" ${hideBtnStyle} onclick="verifyText('scan_code')" class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold">Validar <i class="ph-bold ph-check"></i></button>
                         </div>`;
